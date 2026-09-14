@@ -1,0 +1,113 @@
+body {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+* {
+  box-sizing: border-box;
+}
+.mantine-AppShell-main {
+  padding-bottom: calc(100px + env(safe-area-inset-bottom));
+}
+.desktop-nav {
+  min-height: 48px;
+  border-radius: var(--mantine-radius-md);
+  margin-bottom: 6px;
+}
+.desktop-nav[aria-current='page'] {
+  background: var(--mantine-color-teal-light);
+  color: var(--mantine-color-teal-light-color);
+}
+.mobile-nav {
+  display: none;
+}
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 12px;
+  z-index: 500;
+  padding: 12px;
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+}
+.skip-link:focus {
+  top: 12px;
+}
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--mantine-color-teal-7);
+  outline-offset: 3px;
+}
+@media (max-width: 47.999em) {
+  .mantine-AppShell-navbar {
+    display: none;
+  }
+  .mobile-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 101;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    background: var(--mantine-color-body);
+    border-top: 1px solid var(--mantine-color-default-border);
+  }
+  .mobile-nav a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 48px;
+    color: var(--mantine-color-dimmed);
+    text-decoration: none;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+  .mobile-nav a[aria-current='page'] {
+    color: var(--mantine-color-teal-light-color);
+    background: var(--mantine-color-teal-light);
+    font-weight: 700;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.editor-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.mantine-Button-root,
+.mantine-Input-input {
+  min-height: 44px;
+}
+.mantine-Checkbox-root {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.mantine-Text-root,
+.mantine-Title-root {
+  overflow-wrap: anywhere;
+}
+.save-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 10;
+  background: var(--mantine-color-body);
+}
+@media (max-width: 47.999em) {
+  .save-bar {
+    position: static;
+  }
+}

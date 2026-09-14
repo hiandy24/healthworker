@@ -1,0 +1,38 @@
+# Dependencies and package-manager caches
+node_modules/
+.pnpm-store/
+
+# Build and local Cloudflare state
+dist/
+build/
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Test and tooling output
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.log
+__pycache__/
+*.py[cod]
+
+# Private local data and backups
+.local/
+backups/
+exports/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Local editor and operating-system files
+.DS_Store
+.idea/
+.vscode/

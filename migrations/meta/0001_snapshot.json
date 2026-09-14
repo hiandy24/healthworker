@@ -1,0 +1,911 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "f616a62b-e765-4372-b2eb-f73004975145",
+  "prevId": "4811725a-c69f-42b7-a56f-06ab6df611c9",
+  "tables": {
+    "cardio_records": {
+      "name": "cardio_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entry_id": {
+          "name": "entry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "duration_seconds": {
+          "name": "duration_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_basis": {
+          "name": "duration_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'elapsed'"
+        },
+        "distance_meters": {
+          "name": "distance_meters",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "average_heart_rate": {
+          "name": "average_heart_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "max_heart_rate": {
+          "name": "max_heart_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "elevation_gain_meters": {
+          "name": "elevation_gain_meters",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "incline_percent": {
+          "name": "incline_percent",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resistance_level": {
+          "name": "resistance_level",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "device_calories_kcal": {
+          "name": "device_calories_kcal",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed": {
+          "name": "completed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        }
+      },
+      "indexes": {
+        "cardio_entry": {
+          "name": "cardio_entry",
+          "columns": [
+            "entry_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "cardio_records_entry_id_workout_entries_id_fk": {
+          "name": "cardio_records_entry_id_workout_entries_id_fk",
+          "tableFrom": "cardio_records",
+          "tableTo": "workout_entries",
+          "columnsFrom": [
+            "entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cardio_duration": {
+          "name": "cardio_duration",
+          "value": "\"cardio_records\".\"completed\" IN (0,1) AND \"cardio_records\".\"duration_basis\" IN ('elapsed','moving') AND (\"cardio_records\".\"duration_seconds\" IS NULL OR (\"cardio_records\".\"duration_seconds\">0 AND typeof(\"cardio_records\".\"duration_seconds\")='integer')) AND (\"cardio_records\".\"completed\"=0 OR \"cardio_records\".\"duration_seconds\" IS NOT NULL)"
+        },
+        "cardio_measurements": {
+          "name": "cardio_measurements",
+          "value": "(\"cardio_records\".\"distance_meters\" IS NULL OR \"cardio_records\".\"distance_meters\">=0) AND (\"cardio_records\".\"elevation_gain_meters\" IS NULL OR \"cardio_records\".\"elevation_gain_meters\">=0) AND (\"cardio_records\".\"incline_percent\" IS NULL OR \"cardio_records\".\"incline_percent\" BETWEEN -100 AND 100) AND (\"cardio_records\".\"resistance_level\" IS NULL OR \"cardio_records\".\"resistance_level\">=0) AND (\"cardio_records\".\"device_calories_kcal\" IS NULL OR \"cardio_records\".\"device_calories_kcal\">=0)"
+        },
+        "cardio_heart_rate": {
+          "name": "cardio_heart_rate",
+          "value": "(\"cardio_records\".\"average_heart_rate\" IS NULL OR (\"cardio_records\".\"average_heart_rate\">0 AND typeof(\"cardio_records\".\"average_heart_rate\")='integer')) AND (\"cardio_records\".\"max_heart_rate\" IS NULL OR (\"cardio_records\".\"max_heart_rate\">0 AND typeof(\"cardio_records\".\"max_heart_rate\")='integer')) AND (\"cardio_records\".\"average_heart_rate\" IS NULL OR \"cardio_records\".\"max_heart_rate\" IS NULL OR \"cardio_records\".\"average_heart_rate\"<=\"cardio_records\".\"max_heart_rate\")"
+        }
+      }
+    },
+    "exercises": {
+      "name": "exercises",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "aliases": {
+          "name": "aliases",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "equipment": {
+          "name": "equipment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "muscle_groups": {
+          "name": "muscle_groups",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "measurement_mode": {
+          "name": "measurement_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "resistance_mode": {
+          "name": "resistance_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "load_convention": {
+          "name": "load_convention",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rep_convention": {
+          "name": "rep_convention",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "volume_multiplier": {
+          "name": "volume_multiplier",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cardio_category": {
+          "name": "cardio_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "is_builtin": {
+          "name": "is_builtin",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "exercise_version": {
+          "name": "exercise_version",
+          "value": "\"exercises\".\"version\" > 0"
+        },
+        "exercise_semantics": {
+          "name": "exercise_semantics",
+          "value": "(\"exercises\".\"kind\" = 'strength' AND \"exercises\".\"measurement_mode\" IN ('reps','duration') AND \"exercises\".\"resistance_mode\" IN ('external','bodyweight','assisted') AND \"exercises\".\"resistance_mode\" IS NOT NULL AND \"exercises\".\"cardio_category\" IS NULL) OR (\"exercises\".\"kind\" = 'cardio' AND \"exercises\".\"measurement_mode\" = 'cardio' AND \"exercises\".\"resistance_mode\" IS NULL AND \"exercises\".\"cardio_category\" IN ('run','walk','cycle','swim','row','elliptical','other') AND \"exercises\".\"cardio_category\" IS NOT NULL)"
+        },
+        "exercise_conventions": {
+          "name": "exercise_conventions",
+          "value": "\"exercises\".\"load_convention\" IN ('total','per_implement','none') AND \"exercises\".\"rep_convention\" IN ('total','per_side','not_applicable') AND (\"exercises\".\"volume_multiplier\" IS NULL OR (\"exercises\".\"volume_multiplier\">0 AND \"exercises\".\"resistance_mode\"='external' AND \"exercises\".\"measurement_mode\"='reps'))"
+        },
+        "exercise_json": {
+          "name": "exercise_json",
+          "value": "json_valid(\"exercises\".\"aliases\") AND json_type(\"exercises\".\"aliases\")='array' AND json_valid(\"exercises\".\"muscle_groups\") AND json_type(\"exercises\".\"muscle_groups\")='array'"
+        },
+        "exercise_builtin": {
+          "name": "exercise_builtin",
+          "value": "\"exercises\".\"is_builtin\" IN (0,1)"
+        }
+      }
+    },
+    "idempotency_keys": {
+      "name": "idempotency_keys",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "principal": {
+          "name": "principal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "response_body": {
+          "name": "response_body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "response_status": {
+          "name": "response_status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idempotency_principal_scope_key": {
+          "name": "idempotency_principal_scope_key",
+          "columns": [
+            "principal",
+            "scope",
+            "key"
+          ],
+          "isUnique": true
+        },
+        "idempotency_expiry": {
+          "name": "idempotency_expiry",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "idempotency_response": {
+          "name": "idempotency_response",
+          "value": "json_valid(\"idempotency_keys\".\"response_body\") AND \"idempotency_keys\".\"response_status\" BETWEEN 200 AND 299 AND \"idempotency_keys\".\"expires_at\">\"idempotency_keys\".\"created_at\""
+        }
+      }
+    },
+    "settings": {
+      "name": "settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'singleton'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'zh-CN'"
+        },
+        "unit_system": {
+          "name": "unit_system",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'metric'"
+        },
+        "theme": {
+          "name": "theme",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'auto'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "settings_singleton": {
+          "name": "settings_singleton",
+          "value": "\"settings\".\"id\"='singleton' AND \"settings\".\"locale\"='zh-CN' AND \"settings\".\"unit_system\"='metric' AND \"settings\".\"theme\" IN ('light','dark','auto') AND \"settings\".\"version\">0"
+        }
+      }
+    },
+    "strength_sets": {
+      "name": "strength_sets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entry_id": {
+          "name": "entry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "set_type": {
+          "name": "set_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "completed": {
+          "name": "completed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "reps": {
+          "name": "reps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_seconds": {
+          "name": "duration_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "load_grams": {
+          "name": "load_grams",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assistance_grams": {
+          "name": "assistance_grams",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "effort_type": {
+          "name": "effort_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "effort_value": {
+          "name": "effort_value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "set_position": {
+          "name": "set_position",
+          "columns": [
+            "entry_id",
+            "position"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "strength_sets_entry_id_workout_entries_id_fk": {
+          "name": "strength_sets_entry_id_workout_entries_id_fk",
+          "tableFrom": "strength_sets",
+          "tableTo": "workout_entries",
+          "columnsFrom": [
+            "entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "set_scalars": {
+          "name": "set_scalars",
+          "value": "\"strength_sets\".\"position\">=0 AND \"strength_sets\".\"set_type\" IN ('warmup','working') AND \"strength_sets\".\"completed\" IN (0,1) AND (\"strength_sets\".\"reps\" IS NULL OR (\"strength_sets\".\"reps\">0 AND typeof(\"strength_sets\".\"reps\")='integer')) AND (\"strength_sets\".\"duration_seconds\" IS NULL OR (\"strength_sets\".\"duration_seconds\">0 AND typeof(\"strength_sets\".\"duration_seconds\")='integer')) AND (\"strength_sets\".\"reps\" IS NULL OR \"strength_sets\".\"duration_seconds\" IS NULL) AND (\"strength_sets\".\"completed\"=0 OR \"strength_sets\".\"reps\" IS NOT NULL OR \"strength_sets\".\"duration_seconds\" IS NOT NULL)"
+        },
+        "set_load": {
+          "name": "set_load",
+          "value": "(\"strength_sets\".\"load_grams\" IS NULL OR (\"strength_sets\".\"load_grams\">=0 AND typeof(\"strength_sets\".\"load_grams\")='integer')) AND (\"strength_sets\".\"assistance_grams\" IS NULL OR (\"strength_sets\".\"assistance_grams\">=0 AND typeof(\"strength_sets\".\"assistance_grams\")='integer')) AND (\"strength_sets\".\"load_grams\" IS NULL OR \"strength_sets\".\"assistance_grams\" IS NULL)"
+        },
+        "set_effort": {
+          "name": "set_effort",
+          "value": "(\"strength_sets\".\"effort_type\" IS NULL AND \"strength_sets\".\"effort_value\" IS NULL) OR (\"strength_sets\".\"effort_type\" IS NOT NULL AND \"strength_sets\".\"effort_value\" IS NOT NULL AND ((\"strength_sets\".\"effort_type\"='rpe' AND \"strength_sets\".\"effort_value\" BETWEEN 1 AND 10 AND \"strength_sets\".\"effort_value\"*2=CAST(\"strength_sets\".\"effort_value\"*2 AS INTEGER)) OR (\"strength_sets\".\"effort_type\"='rir' AND \"strength_sets\".\"effort_value\" BETWEEN 0 AND 10 AND \"strength_sets\".\"effort_value\"=CAST(\"strength_sets\".\"effort_value\" AS INTEGER))))"
+        },
+        "set_notes": {
+          "name": "set_notes",
+          "value": "\"strength_sets\".\"notes\" IS NULL OR length(\"strength_sets\".\"notes\")<=4000"
+        }
+      }
+    },
+    "workout_entries": {
+      "name": "workout_entries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workout_id": {
+          "name": "workout_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_name_snapshot": {
+          "name": "exercise_name_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "measurement_snapshot": {
+          "name": "measurement_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "entry_position": {
+          "name": "entry_position",
+          "columns": [
+            "workout_id",
+            "position"
+          ],
+          "isUnique": true
+        },
+        "entries_exercise_workout": {
+          "name": "entries_exercise_workout",
+          "columns": [
+            "exercise_id",
+            "workout_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "workout_entries_workout_id_workouts_id_fk": {
+          "name": "workout_entries_workout_id_workouts_id_fk",
+          "tableFrom": "workout_entries",
+          "tableTo": "workouts",
+          "columnsFrom": [
+            "workout_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "workout_entries_exercise_id_exercises_id_fk": {
+          "name": "workout_entries_exercise_id_exercises_id_fk",
+          "tableFrom": "workout_entries",
+          "tableTo": "exercises",
+          "columnsFrom": [
+            "exercise_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "entry_position_positive": {
+          "name": "entry_position_positive",
+          "value": "\"workout_entries\".\"position\">=0"
+        },
+        "entry_kind": {
+          "name": "entry_kind",
+          "value": "\"workout_entries\".\"kind\" IN ('strength','cardio')"
+        },
+        "entry_snapshot": {
+          "name": "entry_snapshot",
+          "value": "json_valid(\"workout_entries\".\"measurement_snapshot\") AND json_type(\"workout_entries\".\"measurement_snapshot\")='object'"
+        },
+        "entry_notes": {
+          "name": "entry_notes",
+          "value": "\"workout_entries\".\"notes\" IS NULL OR length(\"workout_entries\".\"notes\")<=4000"
+        }
+      }
+    },
+    "workout_write_guards": {
+      "name": "workout_write_guards",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "check_type": {
+          "name": "check_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "valid": {
+          "name": "valid",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "guard_check_type": {
+          "name": "guard_check_type",
+          "value": "\"workout_write_guards\".\"check_type\" IN ('cas','exercise')"
+        }
+      }
+    },
+    "workouts": {
+      "name": "workouts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'draft'"
+        },
+        "duration_seconds": {
+          "name": "duration_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "workouts_status_date_id": {
+          "name": "workouts_status_date_id",
+          "columns": [
+            "status",
+            "local_date",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "workouts_history_order": {
+          "name": "workouts_history_order",
+          "columns": [
+            "\"local_date\" desc",
+            "\"started_at\" desc",
+            "\"id\" desc"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "workout_status": {
+          "name": "workout_status",
+          "value": "\"workouts\".\"status\" IN ('draft','completed')"
+        },
+        "workout_duration": {
+          "name": "workout_duration",
+          "value": "\"workouts\".\"duration_seconds\" IS NULL OR (\"workouts\".\"duration_seconds\">0 AND typeof(\"workouts\".\"duration_seconds\")='integer')"
+        },
+        "workout_version": {
+          "name": "workout_version",
+          "value": "\"workouts\".\"version\">0"
+        },
+        "workout_notes": {
+          "name": "workout_notes",
+          "value": "\"workouts\".\"notes\" IS NULL OR length(\"workouts\".\"notes\")<=4000"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "workouts_history_order": {
+        "columns": {
+          "\"local_date\" desc": {
+            "isExpression": true
+          },
+          "\"started_at\" desc": {
+            "isExpression": true
+          },
+          "\"id\" desc": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}
