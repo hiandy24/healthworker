@@ -1,6 +1,6 @@
 import { ownedDraftKey } from '../../src/web/lib';
 // @vitest-environment jsdom
-import { createElement } from 'react';
+import { createElement, useState } from 'react';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import {
   render,
@@ -12,7 +12,12 @@ import {
 import { MantineProvider } from '@mantine/core';
 import { ModalsProvider } from '@mantine/modals';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMemoryRouter, RouterProvider, Link } from 'react-router-dom';
+import {
+  createMemoryRouter,
+  RouterProvider,
+  Link,
+  useNavigate,
+} from 'react-router-dom';
 import { NavigationGuard } from '../../src/web/NavigationGuard';
 import { ExerciseLibrary } from '../../src/web/Exercises';
 import { WorkoutEditorPage } from '../../src/web/Workouts';
@@ -234,6 +239,33 @@ it('P2 SPA navigation is blocked with Mantine cancel and explicit proceed', asyn
   fireEvent.click(screen.getByText('离开编辑'));
   fireEvent.click(await screen.findByRole('button', { name: '确认继续' }));
   await waitFor(() => expect(router.state.location.pathname).toBe('/other'));
+});
+it('P1 successful save disabling the guard resumes its own navigation without a prompt', async () => {
+  // Mirrors the WorkoutEditor success handler: setCloudSaved(true) then
+  // navigate() in the same task, before the router re-registers blockers.
+  function SaveFlowSimulator() {
+    const [enabled, setEnabled] = useState(true);
+    const navigate = useNavigate();
+    return createElement(
+      'div',
+      {},
+      createElement(NavigationGuard, { enabled }),
+      createElement(
+        'button',
+        {
+          onClick: () => {
+            setEnabled(false);
+            void navigate('/other');
+          },
+        },
+        '完成并保存训练',
+      ),
+    );
+  }
+  const router = mount(createElement(SaveFlowSimulator));
+  fireEvent.click(screen.getByRole('button', { name: '完成并保存训练' }));
+  await waitFor(() => expect(router.state.location.pathname).toBe('/other'));
+  expect(screen.queryByRole('button', { name: '确认继续' })).toBeNull();
 });
 it('P2 comma aliases errors are visible and focusable rather than silent submit failure', async () => {
   vi.stubGlobal(
