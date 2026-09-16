@@ -1,7 +1,7 @@
 # HealthWorker 完整设计方案
 
-- **文档版本**：1.8
-- **日期**：2026-09-14
+- **文档版本**：2.2
+- **日期**：2026-09-15
 - **状态**：实施基线。用户已认可总体方向，并授权整理完整方案、选择 UI 框架和建立仓库执行规则；本文细化第一版的默认实现约定。
 - **适用范围**：本仓库的前端、Worker 后端、D1 数据库、默认只读、受控创建 Agent API、Agent Skill、测试与部署。
 - **实现状态**：M2 记录 CRUD、独立 document 草稿与恢复/并发保护，M3 summary/strength/cardio 与 Recharts，M4 设置、导出、新本地 SQLite 恢复脚本与默认只读、受控创建 Skill 已实现。独立代码 review 与本地自动测试不等于完整 GUI/真实 Access 验收；2026-09-14 UTC 已首次生产部署至 https://health.tokenflare.top，独立 D1 仅三条内置动作、无训练；DNS/TLS、无凭证 Access 拦截和备用入口关闭已实测。M5 部分完成，OTP/Service Token、完整 GUI/真机验收仍待办。具体证据与阻塞见 README、docs/deployment.md、docs/reviews/m2.md、m3.md、m4.md。
@@ -10,7 +10,7 @@
 
 ## 1. 产品定位
 
-HealthWorker 是一个面向个人的体能训练记录与可视化系统。用户在手机或电脑上记录力量训练及有氧训练，浏览历史、趋势和客观统计；Agent 经由专门 API 读取数据并在用户选择的 Agent 环境中分析；仅明确授权的导入身份可在用户确认后创建新训练（§9.5），普通身份仍只读。
+HealthWorker 是一个面向个人的体能训练记录与可视化系统。用户在手机或电脑上记录力量训练及有氧训练，浏览历史、趋势和客观统计；Agent 经由专门 API 读取数据并在用户选择的 Agent 环境中分析；仅明确授权的导入身份可在用户确认后创建新训练及其缺失动作定义（§9.5），普通身份仍只读。
 
 ### 1.1 核心目标
 
@@ -23,11 +23,11 @@ HealthWorker 是一个面向个人的体能训练记录与可视化系统。用�
 
 ### 1.2 用户与权限
 
-| 身份         | 入口                                 | 权限                                                                                              |
-| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| 个人使用者   | 受 Access 保护的浏览器页面与用户 API | 记录、查询、编辑、删除、动作管理、设置和导出                                                      |
-| 授权 Agent   | 专用 Agent API                       | 读取元数据、动作、历史及统计；导入身份仅额外 POST 新训练（§9.5），不能修改/删除历史或调用管理接口 |
-| 未认证访问者 | 任意非公开入口                       | 无训练数据访问权限                                                                                |
+| 身份         | 入口                                 | 权限                                                                                                                      |
+| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| 个人使用者   | 受 Access 保护的浏览器页面与用户 API | 记录、查询、编辑、删除、动作管理、设置和导出                                                                              |
+| 授权 Agent   | 专用 Agent API                       | 读取元数据、动作、历史及统计；导入身份仅额外 POST 新训练与缺失动作定义（§9.5），不能修改/删除历史或动作、不能调用管理接口 |
+| 未认证访问者 | 任意非公开入口                       | 无训练数据访问权限                                                                                                        |
 
 第一版为单用户，不创建注册、租户或通用 RBAC 管理平台；代码仍需显式区分人类身份和 Agent 身份。
 
@@ -515,14 +515,14 @@ Service Token 设置期限和轮换流程，撤销需在 Access 删除/禁用或
 
 ### 8.4 配置分类
 
-| 配置                                                                | 位置与说明                                     |
-| ------------------------------------------------------------------- | ---------------------------------------------- |
-| D1 binding `DB`                                                     | Wrangler 环境配置，dev/staging/prod 分离       |
-| Access team domain、issuer、单 audience 与身份分类、owner allowlist | Worker 环境配置；不是前端任意可控参数          |
-| 正式应用 origin                                                     | Worker 配置，用于同源写入检查                  |
-| Agent base URL、client ID、client secret                            | Agent 本地环境变量/密钥管理，不进仓库          |
-| Cloudflare 部署凭证                                                 | 本地受保护登录或 CI secrets，不进入前端/Skill  |
-| 本地开发配置                                                        | `.dev.vars` 等被忽略文件；只提交无真实值的示例 |
+| 配置                                                                | 位置与说明                                      |
+| ------------------------------------------------------------------- | ----------------------------------------------- |
+| D1 binding `DB`                                                     | Wrangler 环境配置，dev/staging/prod 分离        |
+| Access team domain、issuer、单 audience 与身份分类、owner allowlist | Worker 环境配置；不是前端任意可控参数           |
+| 正式应用 origin                                                     | Worker 配置，用于同源写入检查                   |
+| Agent base URL、client ID、client secret                            | Agent 私有本地 JSON/环境变量/密钥管理，不进 Git |
+| Cloudflare 部署凭证                                                 | 本地受保护登录或 CI secrets，不进入前端/Skill   |
+| 本地开发配置                                                        | `.dev.vars` 等被忽略文件；只提交无真实值的示例  |
 
 ## 9. Agent Skill
 
@@ -554,7 +554,11 @@ skills/healthworker/
 
 环境变量：
 
-可选 `HEALTHWORKER_CONFIG` 显式指定绝对私有 JSON 路径（仅 `baseUrl`、`clientId`；16 KiB 上限，重复/未知字段及任何 Secret 字段拒绝）。POSIX 要求当前用户所有、文件 0600、直接父目录 0700，拒绝文件符号链接；不自动搜索 dotenv/OAuth/cookies。base/ID 环境变量优先，但覆盖 origin 必须与私有配置的 HTTPS scheme/host/effective port 一致，否则请求前拒绝，需用户核验目标并显式选择匹配配置。Secret 仅安全进程环境。仓库本地绑定可存于被忽略 `.local/healthworker-client.json`，不随 Skill 分发，不自动全局安装；读取/导入/输出脱敏共享配置加载。配置存在不证明线上认证或导入授权。
+默认从脚本真实路径相对 Skill 根读取 `client.local.json`，可用 `HEALTHWORKER_CONFIG` 显式指定绝对路径替代；默认文件缺失保留 env-only，显式文件缺失或已有文件不安全则拒绝。JSON 仅允许必需 `baseUrl`、`clientId` 与可选 `clientSecret`，HTTPS 最终 secret 必须来自 JSON 或环境；16 KiB 上限，重复/未知字段及非法值拒绝，错误不回显正文。POSIX 文件必须当前用户所有、普通文件、0600，拒绝文件符号链接；直接父目录当前用户所有且不可 group/world 写入，允许 0755 的共享 Skill 目录而不修改原权限（专用私有目录推荐 0700）。信任本地单用户安装、祖先目录和脚本代码，不声称防御同用户进程、不可信祖先、ACL 或备份泄漏。
+
+base/ID/secret 环境变量优先，显式空值失败；覆盖 origin 必须与 JSON HTTPS scheme/host/effective port 相同，即使同时覆盖凭证也不得跨源，否则请求前拒绝，须核验目的地并显式选择匹配配置。模块加载与 help 不读秘密，命令执行解析一次最终配置，GET/受控导入及输出脱敏、输入/plan/journal 凭证拒绝复用同一快照。不搜索 dotenv/OAuth/cookies 或旧 `.local/healthworker-client.json`。
+
+用户明确授权真实凭证仅本地保存在精确 gitignored `skills/healthworker/client.local.json`，不进 Git、公开打包、前端或日志；公开 example 只用假值。默认分发必须排除此文件，`.gitignore` 不防手工打包。用户可自行私下携带至可信单用户安装并保持 0600，但须说明实时权限复制及泄漏风险，建议泄漏后轮换。不自动全局安装、修改 profile 或创建 global.env。配置不证明线上认证或导入权限，也不授权生产写入/发布/Cloudflare 变更。
 
 ```text
 HEALTHWORKER_CONFIG
@@ -691,29 +695,30 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 
 ### 12.2 必须通过的验收用例
 
-| 编号 | 验收标准                                                                                                                        |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------- |
-| A01  | 手机与桌面均可创建包含深蹲多组和跑步的混合训练，刷新后完整保留                                                                  |
-| A02  | 复制上一组/历史训练不会自动产生已完成成绩或重复训练                                                                             |
-| A03  | 热身默认排除；次数模式、计时模式、自重、辅助和外加重量分别正确校验                                                              |
-| A04  | 完成训练只包含完整明细，草稿不进入统计；缺失值不展示为零成绩                                                                    |
-| A05  | 100 kg × 5 次 × 3 组、倍率 1 的容量为 1,500 kg·次；双哑铃倍率用独立测试固定                                                     |
-| A06  | 自重/辅助/计时/缺失倍率组不进入容量，并返回排除计数                                                                             |
-| A07  | 5 km/30 min 与 10 km/50 min 的聚合配速为 320 秒/km，而非两条配速的简单平均                                                      |
-| A08  | 周一边界、月边界、跨午夜和夏令时样本日期归属正确；改变默认时区不重写历史日期                                                    |
-| A09  | 连续或并发重放同一创建请求只有一条训练；同 key 不同正文返回 409                                                                 |
-| A10  | 两个客户端编辑同版本仅一个成功，另一个 412；任何 SQL 失败均不留下部分明细                                                       |
-| A11  | 并发编辑/删除检查版本；归档动作仍能展示历史但不能新增引用                                                                       |
-| A12  | 无凭证不能获取数据，伪造 Access 头无效；同 AUD 下 human/service 身份不可互换，混淆身份拒绝                                      |
-| A13  | 只读 Agent 对所有写路径均被拒绝；导入 Token 仅 POST /workouts，人类 API 不接受 Agent Token；未知 API 不返回 SPA HTML            |
-| A14  | Access 过期/重定向、离线、500、429 均有可理解提示，录入内容不丢失                                                               |
-| A15  | CSV 正确转义并防公式注入；JSON 全量包含归档动作、草稿及完整备注，恢复后 ID、引用、备注和统计一致                                |
-| A16  | 360/390/768/1024/1440 px 无页面横向溢出、遮挡或不可操作按钮；关键流程支持键盘及 200% 缩放                                       |
-| A17  | 浅色/深色、焦点、错误、空状态及图表明细可读；图表不只依赖颜色或 hover                                                           |
-| A18  | Skill 读取只使用白名单 GET；导入只使用确认后的 POST /workouts、正确处理分页/截断/超时、拒绝跨源重定向、不输出凭证               |
-| A19  | 最大允许训练规模在 D1 运行环境完整保存/更新/删除；参数限制不导致部分提交                                                        |
-| A20  | 部署入口、日志和前端包检查通过，无 Service Token、数据库管理凭证或真实训练 seed                                                 |
-| A21  | 新增动作引用与动作归档/计量语义修改并发时符合串行结果，不写入失效快照；已归档历史条目仍可正常编辑，动作和训练各自的游标分页正确 |
+| 编号 | 验收标准                                                                                                                                |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| A01  | 手机与桌面均可创建包含深蹲多组和跑步的混合训练，刷新后完整保留                                                                          |
+| A02  | 复制上一组/历史训练不会自动产生已完成成绩或重复训练                                                                                     |
+| A03  | 热身默认排除；次数模式、计时模式、自重、辅助和外加重量分别正确校验                                                                      |
+| A04  | 完成训练只包含完整明细，草稿不进入统计；缺失值不展示为零成绩                                                                            |
+| A05  | 100 kg × 5 次 × 3 组、倍率 1 的容量为 1,500 kg·次；双哑铃倍率用独立测试固定                                                             |
+| A06  | 自重/辅助/计时/缺失倍率组不进入容量，并返回排除计数                                                                                     |
+| A07  | 5 km/30 min 与 10 km/50 min 的聚合配速为 320 秒/km，而非两条配速的简单平均                                                              |
+| A08  | 周一边界、月边界、跨午夜和夏令时样本日期归属正确；改变默认时区不重写历史日期                                                            |
+| A09  | 连续或并发重放同一创建请求只有一条训练；同 key 不同正文返回 409                                                                         |
+| A10  | 两个客户端编辑同版本仅一个成功，另一个 412；任何 SQL 失败均不留下部分明细                                                               |
+| A11  | 并发编辑/删除检查版本；归档动作仍能展示历史但不能新增引用                                                                               |
+| A12  | 无凭证不能获取数据，伪造 Access 头无效；同 AUD 下 human/service 身份不可互换，混淆身份拒绝                                              |
+| A13  | 只读 Agent 对所有写路径均被拒绝；导入 Token 仅 POST /workouts，人类 API 不接受 Agent Token；未知 API 不返回 SPA HTML                    |
+| A14  | Access 过期/重定向、离线、500、429 均有可理解提示，录入内容不丢失                                                                       |
+| A15  | CSV 正确转义并防公式注入；JSON 全量包含归档动作、草稿及完整备注，恢复后 ID、引用、备注和统计一致                                        |
+| A16  | 360/390/768/1024/1440 px 无页面横向溢出、遮挡或不可操作按钮；关键流程支持键盘及 200% 缩放                                               |
+| A17  | 浅色/深色、焦点、错误、空状态及图表明细可读；图表不只依赖颜色或 hover                                                                   |
+| A18  | Skill 读取只使用白名单 GET；导入只使用确认后的 POST /workouts 与 POST /exercises、正确处理分页/截断/超时、拒绝跨源重定向、不输出凭证    |
+| A19  | 最大允许训练规模在 D1 运行环境完整保存/更新/删除；参数限制不导致部分提交                                                                |
+| A20  | 部署入口、日志和前端包检查通过，无 Service Token、数据库管理凭证或真实训练 seed                                                         |
+| A21  | 新增动作引用与动作归档/计量语义修改并发时符合串行结果，不写入失效快照；已归档历史条目仍可正常编辑，动作和训练各自的游标分页正确         |
+| A22  | MCP 面仅 7 个只读工具、永不返回备注；路径令牌缺失/错误 fail closed；真实 ChatGPT 连接器端到端（含网络受限沙箱不可达时）属上线后人工验收 |
 
 ### 12.3 性能目标与验证方法
 
@@ -764,6 +769,12 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 
 ### 变更记录
 
+- **2.2 / 2026-09-16（MCP 新增受控创建）**：用户要求 ChatGPT 直接接管数据记录后，MCP 边车新增 create_workout / create_exercise 两个 create-only 工具（§9.6.1），复用导入白名单身份权限；内容哈希幂等键；工具标注 readOnlyHint=false 触发 ChatGPT 的写操作确认；instructions 与描述强制"先展示后确认、绝不虚构数据"；无更新/删除/归档/管理面。
+
+- **2.1 / 2026-09-16（只读 MCP 服务器）**：为让 ChatGPT 网页版跨对话分析训练数据（其 skill python 沙箱默认无出站网络），新增独立 Worker `healthworker-mcp`（§9.6）：MCP Streamable HTTP 无状态只读子集，7 个只读工具映射现有 Agent API GET；凭据（建议只读 Service Token）存 Worker Secret，连接 URL 内嵌路径令牌；不定义任何写入工具、永不传递 includeNotes；主 Worker 与 Access 边界不变，无绕过路径。新增 devDependency `@modelcontextprotocol/sdk`（仅测试用真实客户端）。
+- **2.0 / 2026-09-15（Agent 自动创建缺失动作）**：用户明确授权导入 Agent 自动创建缺失动作（"我很多时候都不是手填的，都需要你来帮我填写"）。§9.5 修订：导入身份增加 POST /api/agent/v1/exercises（metadata 增加 exercises:create），接受可选客户端选定稳定 UUID 供批量前向引用；创建以原子条件 batch 实现（名称条件插入 + changes()=1 才写 replay 行 + 主键冲突整体回滚），错误契约 409 IDEMPOTENCY_CONFLICT/EXERCISE_EXISTS/EXERCISE_ID_EXISTS；人类管理保留同名能力，不加 schema 唯一约束。Skill 批量 JSON 增加可选 exercises 声明，计划含 createExercises，导入先动作后训练、动作失败即停（后续训练 not_attempted）。普通 service 仍只读，Agent 仍无更新/删除/归档/管理权限。
+- **1.9 / 2026-09-15（Skill 本地 JSON 凭证）**：用户明确授权 Skill 根私有 JSON 默认加载并本地保存 Secret；环境覆盖与跨源绑定保持，文件 0600、父目录禁止他人写入但不强制共享目录 0700。仅本地配置信任边界与 A18/A20 回归变更，不改 API/schema/统计或服务端权限；不部署、不导入，仅允许 metadata GET 最小真实验证。
+
 - **1.8 修订 / 2026-09-15（Skill 私有绑定）**：§9.3/A18 增加显式私有 JSON base/ID 配置，Secret 仍仅环境；环境优先且跨 origin 覆盖拒绝。真实身份仅本地被忽略文件，分发示例为合成；复用 CLI 配置、读取/导入安全门及脱敏，增加离线回归。不改 API/schema/统计或服务权限，不部署、不执行生产请求。
 
 - **1.8 修订 / 2026-09-15**：按独立审查 HW-2026-09-15-01/02 对齐 Python 创建输入 UUID 与 Zod（版本 1–8/RFC variant，nil/小写 max 特例，普通 UUID 忽略大小写），整数按有限数值判断，接受 1.0、拒绝 bool；不修改历史 read/restore 或服务端 schema。共享合成矩阵回归并统一默认只读与受控 POST 的当前文档；安全边界、统计与数据版本不变，仅本地修复。
@@ -786,6 +797,26 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 
 - **1.0 / 2026-09-13**：从认可的设计草案形成实施基线；确定 Mantine UI；固定数据模型、统计口径、认证边界、Agent 契约、测试与交付要求。
 
+## 9.6 只读 MCP 边界（2.1）
+
+ChatGPT 网页版 skill 的 python 沙箱默认无出站网络，CLI 方案在网页端不可行；MCP 连接由 ChatGPT 本体发起、不经沙箱，因此新增独立 Worker `healthworker-mcp` 作为 MCP 服务器。它与主 Worker 分开部署：主 Worker 的全部入口继续受 Access 保护，不新增任何绕过 Access 的路径；MCP Worker 是 Agent API 的**只读消费者**，凭据存于其 Worker Secret。
+
+- **协议**：MCP Streamable HTTP 的无状态子集，手工实现且刻意保持最小——`initialize`/`notifications/initialized`/`ping`/`tools/list`/`tools/call`，客户端 Accept 含 text/event-stream 时以 SSE 流式包裹 JSON-RPC 响应（ChatGPT 连接器只解析 SSE；规范允许 JSON 或 SSE 二选一），纯 JSON 客户端路径保留；无会话、无服务端主动流（GET/DELETE 405，通知 202）。协议版本对日期形回显（向前兼容新修订），`MCP-Protocol-Version` 头宽容接受不拒 400；拒绝 JSON-RPC 批量消息。不用 Durable Objects 与协议框架依赖，以降低部署面并便于审计；`@modelcontextprotocol/sdk` 仅作为 devDependency 在测试中以真实客户端（经真实 TCP）钉住生态兼容性。
+- **准入**：连接 URL 路径内嵌不可猜测的 `MCP_PATH_TOKEN`（常量时间比较，错误 404 不区分原因；对整段大小写折叠兼容——部分连接器客户端会规范化 URL 大小写，折叠后熵仍约 168 bit）。ChatGPT 自定义连接器不支持自定义认证头，URL 即准入凭证；这是有意的现实边界，由下一层的只读属性兜底。
+- **工具（2.1 只读面）**：7 个只读工具（get_metadata、search_exercises、list_workouts、get_workout、get_summary_stats、get_strength_stats、get_cardio_stats）映射 Agent API GET。`list_workouts`/`get_workout` 永不传递 includeNotes，训练备注对 MCP 客户端不可见。参数浅校验（必填/格式/枚举/未知参数拒绝，`additionalProperties: false` 强制执行）后原样转发；上游 Zod 仍是权威校验者。
+- **错误契约**：参数错误 JSON-RPC -32602；未知方法 -32601；解析/结构错误 -32700/-32600（HTTP 400）；上游 401/403→AUTHENTICATION、400/404/422→透传安全错误码、429/5xx→UPSTREAM_ERROR、网络失败→UPSTREAM_UNREACHABLE、超 4 MiB→RESPONSE_TOO_LARGE，全部以 `isError: true` 文本内容返回，不含密钥、内部 URL 或堆栈。
+- **凭据与轮换**：`AGENT_CLIENT_ID`/`AGENT_CLIENT_SECRET` 为 Worker Secret，建议使用未加入导入白名单的只读 Service Token；轮换只影响该 Worker，所有对话即时生效。`AGENT_BASE_URL` 为公开 var。
+- **测试**：workerd 池覆盖协议面（认证路径、405、解析/结构错误、版本协商、通知 202、工具清单）与上游映射（凭据头、URL 编码、非法参数拒绝且不发上游请求、上游失败映射、缺凭据 fail closed）；另有 Node 真实 TCP + 官方 SDK 客户端套件钉住 initialize/listTools/callTool 全流程。
+
+### 9.6.1 受控新增工具（2.2）
+
+用户明确要求让 ChatGPT 直接记录数据后，MCP 面新增 **create-only** 工具两个：`create_workout`（POST /workouts）与 `create_exercise`（POST /exercises），复用导入白名单身份已有的创建权限，与 §9.5 的授权范围完全一致。
+
+- **授权边界不变**：仍无更新/删除/归档/设置/导出/数据库管理工具；上游 Agent API 对这些方法继续 405。ChatGPT 对写操作要求用户确认（工具声明 readOnlyHint=false、destructiveHint=false），instructions 明确要求"调用前把完整内容逐项展示给用户并取得确认、绝不虚构用户未提供的数据"。
+- **幂等**：MCP 无状态调用，幂等键按"工具名 + 规范化参数"的 SHA-256 推导（`hw-mcp-<hex>`），相同内容 24 小时内重试回放原始结果而非重复创建；显式 `idempotencyKey` 参数用于刻意的相同内容重复创建。
+- **ID 注入**：条目/组/动作的 UUID 可由调用方省略，Worker 生成（`crypto.randomUUID`），避免要求模型生成 UUID；显式提供的必须通过 UUID 校验。
+- **双层校验**：MCP 层做结构/类型/格式浅校验（含 completed 默认、working 默认、null 填充，确保满足上游 strict schema 的完整字段）；上游 Zod 仍是权威校验者，业务错误（409 同名动作、422 计量不符、INVALID_EXERCISE 等）以 `UPSTREAM_REJECTED <code>` 文本回传供模型自纠。
+
 ## 15. 官方参考资料
 
 查阅日期：2026-09-13；Access JWT 文档重新核对于 2026-09-14。本文依据下列官方文档核验平台和 UI 框架能力；官方文档会变化，实施时再次核对具体版本与套餐。
@@ -803,10 +834,10 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 - [Mantine Provider](https://mantine.dev/theming/mantine-provider/)：主题、CSS variables 与色彩模式。
 - [Mantine Browser Support](https://mantine.dev/browser-support/)：浏览器测试基线及限制。
 
-## 9.5 受控批量创建（1.8）
+## 9.5 受控批量创建（1.8 / 2.0）
 
-ACCESS_IMPORT_TOKEN_IDS 是可选、逗号分隔、大小写敏感的已验 JWT common_name Client ID allowlist。未配置全部只读；配置空值、空项、空白内嵌或通配星号非法，503 fail closed。ACCESS_SERVICE_TOKEN_IDS 总体 allowlist 先执行，导入配置不能绕过。human 与 service 入口互斥不变，单 ACCESS_AUD 不变。导入 service 仅额外允许精确 POST /api/agent/v1/workouts，必须 JSON 和 Idempotency-Key；不要求浏览器 Origin，但仍需已验身份。所有 Agent PUT/PATCH/DELETE、POST exercises/settings/export/未知路径拒绝。metadata 仅实际导入 identity 增加 workouts:create；OpenAPI 描述条件权限，不泄 Client IDs。local mock 不授予导入能力。
+ACCESS_IMPORT_TOKEN_IDS 是可选、逗号分隔、大小写敏感的已验 JWT common_name Client ID allowlist。未配置全部只读；配置空值、空项、空白内嵌或通配星号非法，503 fail closed。ACCESS_SERVICE_TOKEN_IDS 总体 allowlist 先执行，导入配置不能绕过。human 与 service 入口互斥不变，单 ACCESS_AUD 不变。导入 service 仅额外允许精确 POST /api/agent/v1/workouts 与 POST /api/agent/v1/exercises，必须 JSON 和 Idempotency-Key；不要求浏览器 Origin，但仍需已验身份。所有 Agent PUT/PATCH/DELETE、POST settings/export/未知路径拒绝。metadata 仅实际导入 identity 增加 exercises:create 与 workouts:create；OpenAPI 描述条件权限，不泄 Client IDs。local mock 不授予导入能力。
 
-本轮选择不开放 Agent POST /exercises。Agent 先读查询匹配稳定动作 UUID 与计量语义，列出未匹配项供用户确认，由 human 动作库建立；归档动作不能复用新建引用，禁止偷建/改归档历史。原始文件由 Agent 在用户确认单位、时间、缺失语义后转换为确定 JSON，不盲猜文件。CLI validate/plan 先 metadata、结构/计量检查、动作查询及同本地日期疑似重复列表（不是全面去重）；输入最多 1000 次训练，schema 见 Skill API。
+Agent 动作创建（2.0 授权）：导入身份可在用户确认计划后创建缺失动作。请求接受可选客户端选定稳定 UUID（供批量导入前向引用，仍须 Zod UUID 域校验），固定创建非内置、未归档动作；同 key 同正文重放并标记 replayed，同 key 异正文 409 IDEMPOTENCY_CONFLICT，同名 409 EXERCISE_EXISTS，指定 UUID 已占用 409 EXERCISE_ID_EXISTS。创建为单个原子 D1 batch：动作行按"名称不存在"条件插入，replay 记录仅在动作行真实写入（changes()=1）时生成，主键冲突整体回滚——不依赖先查后写，也不给 schema 加名称唯一约束（人类管理保留同名能力）。Agent 不修改、归档或删除动作，不更新/删除历史训练；归档动作不能复用新建引用。原始文件由 Agent 在用户确认单位、时间、缺失语义后转换为确定 JSON，不盲猜文件。批量 JSON 可选 `exercises` 声明（客户端 UUID + 完整 ExerciseInput，须被引用、名称不得与服务器或批次内重复）；CLI validate/plan 先 metadata（声明时要求 exercises:create）、结构/计量检查（声明动作并入匹配表）、同本地日期疑似重复列表（不是全面去重）；输入最多 1000 次训练，schema 见 Skill API。
 
-计划绑定 batchId、规范 JSON SHA256、origin、逐训练 sourceId/bodyHash/key 和确认摘要。import 必须 --confirm 计划摘要；改正文/目的地拒绝旧计划。计划与 journal 含健康信息，推荐被忽略 .local 私有目录；新建文件 0600，journal 原子替换及单执行锁。每条尝试前持久化 pending，成功存资源 ID；同 body/key 网络重试，成功条目跳过，失败非零退出并逐条报告，整批非原子。仅训练内部原子。首次不确定尝试超过 23 小时停止自动恢复，需 human 核对（服务幂等 24 小时）；不要删除 journal、换 Token/batchId/子记录 UUID 来绕过去重。跨 principal 技术幂等独立，轮换后须人工核对，不能宣称跨 Token 全局去重。改过的输入应拆出真正未提交项重新确认，绝不自动覆盖。未建设报告存储、DB 管理、更新删除或外部模型服务。
+计划绑定 batchId、规范 JSON SHA256、origin、逐训练 sourceId/bodyHash/key、逐待建动作 createExercises（id/名称/bodyHash/独立 key）和确认摘要。import 必须 --confirm 计划摘要；改正文/目的地拒绝旧计划。计划与 journal 含健康信息，推荐被忽略 .local 私有目录；新建文件 0600，journal 原子替换及单执行锁。导入顺序为先动作后训练；每条尝试前持久化 pending，成功存资源 ID；任一动作失败即停止且后续训练标记 not_attempted（不向缺失动作发训练 POST）；训练逐条独立重试，失败非零退出并逐条报告，整批非原子，仅单资源内部原子。首次不确定尝试超过 23 小时停止自动恢复，需 human 核对（服务幂等 24 小时）；不要删除 journal、换 Token/batchId/子记录 UUID 来绕过去重。跨 principal 技术幂等独立，轮换后须人工核对，不能宣称跨 Token 全局去重。改过的输入应拆出真正未提交项重新确认，绝不自动覆盖。未建设报告存储、DB 管理、更新删除或外部模型服务。

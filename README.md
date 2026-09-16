@@ -1,6 +1,6 @@
 # HealthWorker
 
-基于 Cloudflare Workers 与 D1 的个人训练记录系统。实施基线见 [完整设计 1.8](docs/design.md) 和 [执行规则](AGENTS.md)。
+基于 Cloudflare Workers 与 D1 的个人训练记录系统。实施基线见 [完整设计 1.9](docs/design.md) 和 [执行规则](AGENTS.md)。
 
 ## 当前状态：M2–M4 本地实现，验收未全部完成
 
@@ -13,7 +13,7 @@
 
 ## 单 Access 应用 / 单 AUD（设计 1.8）
 
-用户已授权替换旧双应用要求。同 hostname 的唯一 self-hosted 应用同时配置 owner 邮箱 OTP Allow 和仅指定 Agent Token 的 Service Auth。Worker 统一验证 ACCESS_AUD，再以已验 type/sub/email/common_name 互斥分类：管理 human-only，Agent service-only：普通身份只读，导入 allowlist 身份仅额外 POST workouts，混合/未知拒绝。旧双 AUD 不读取，无静默回退；可选 ACCESS_SERVICE_TOKEN_IDS 限制 Client ID。步骤及官方证据见 [部署说明](docs/deployment.md#单-aud-身份与真实-access-验收)。私有原 human AUD 可作为单 AUD 来源，不在公共文件列值。
+用户已授权替换旧双应用要求。同 hostname 的唯一 self-hosted 应用同时配置 owner 邮箱 OTP Allow 和仅指定 Agent Token 的 Service Auth。Worker 统一验证 ACCESS_AUD，再以已验 type/sub/email/common_name 互斥分类：管理 human-only，Agent service-only：普通身份只读，导入 allowlist 身份仅额外 POST workouts 与 POST exercises（均为受控 create-only，缺失动作需计划确认后创建），混合/未知拒绝。旧双 AUD 不读取，无静默回退；可选 ACCESS_SERVICE_TOKEN_IDS 限制 Client ID。步骤及官方证据见 [部署说明](docs/deployment.md#单-aud-身份与真实-access-验收)。私有原 human AUD 可作为单 AUD 来源，不在公共文件列值。
 
 历史单 AUD 实现轮完整运行 typecheck、lint、format、format:check、build、50 个 TS 测试、55 个 workerd/D1 测试及 27 个 Python unittest 均通过。新增合成签名 JWT 测试覆盖身份混淆与跨入口拒绝；workerd app.request 走真实 HTTP 路由/认证/jose 远程 JWKS 流程，仅 mock 公钥传输，不 mock authenticate。初次测试类型错误已修复。该轮测试并非真实边缘、浏览器或 OTP 验收。后续首次部署轮另通过生产 build/dry-run、typecheck、lint、50 项 TS 与 55 项集成测试；已授权创建独立 D1 和发布 Custom Domain，未改 Access 策略。根 Wrangler 保留本地环境，真实生产绑定仅在被忽略的私有配置。
 
@@ -39,6 +39,7 @@ npx pnpm@10.34.5 typecheck
 npx pnpm@10.34.5 lint
 npx pnpm@10.34.5 format:check
 npx pnpm@10.34.5 test
+npx pnpm@10.34.5 test:mcp
 npx pnpm@10.34.5 test:integration
 python3 -m unittest discover -s tests/skill -v
 npx pnpm@10.34.5 build
@@ -59,14 +60,14 @@ git diff --check
 # 将设置页下载的 JSON 放到被忽略的 backups/，目标文件必须不存在。
 python3 scripts/restore-local.py backups/backup.json --new-local-db .local/restored.sqlite
 
-# 无凭证的明确本地开发模式；不会发送继承的 Service Token。
+# 在不含生产 client.local.json 的独立本地 Skill 副本中运行；不会发送 Service Token。
 HEALTHWORKER_BASE_URL=http://127.0.0.1:5173 \
   python3 skills/healthworker/scripts/healthworker.py --development metadata
 HEALTHWORKER_BASE_URL=http://127.0.0.1:5173 \
   python3 skills/healthworker/scripts/healthworker.py --development stats summary
 ```
 
-恢复只创建新本地 SQLite，拒绝覆盖/远端参数，不是远端 D1 恢复工具。正式 Agent 使用 HTTPS origin 与本地环境变量 HEALTHWORKER_ACCESS_CLIENT_ID/HEALTHWORKER_ACCESS_CLIENT_SECRET，不把凭证放命令行或仓库。详见 [Skill](skills/healthworker/SKILL.md) 与 [CLI 契约](skills/healthworker/references/api.md)；源目录不会被所有平台自动发现，不自动安装到全局。读取命令只用白名单 GET；导入命令仅在能力检查和用户确认后 POST workouts，每次 socket 操作 20 秒（非总截止时间），初次后最多 3 次重试，拒绝所有重定向/HTML，分页截断显式返回。
+恢复只创建新本地 SQLite，拒绝覆盖/远端参数，不是远端 D1 恢复工具。正式 Agent 默认读取 Skill 根私有 `client.local.json` 中 HTTPS baseUrl/clientId/clientSecret，环境变量可优先覆盖但不允许跨 origin；凭证不进命令行、Git 或公开包。详见 [Skill](skills/healthworker/SKILL.md) 与 [CLI 契约](skills/healthworker/references/api.md)；源目录不会被所有平台自动发现，不自动安装到全局。读取命令只用白名单 GET；导入命令仅在能力检查和用户确认后 POST workouts，每次 socket 操作 20 秒（非总截止时间），初次后最多 3 次重试，拒绝所有重定向/HTML，分页截断显式返回。
 
 本轮 session review 另修复无正文 DELETE JSON 请求头、启动云端主题、统计中文质量键、UTF-8 载荷预检、UUID 类型安全、D1 插入宽度、guard 定向清理和幂等当前 request ID。新增测试未使用浏览器；既有 dev server 未重启。逐项修复、迭代失败与最终证据见 [本次 session review](docs/reviews/session-2026-09-14.md)。
 
@@ -93,15 +94,25 @@ HEALTHWORKER_BASE_URL=http://127.0.0.1:5173 \
 
 以上是实现者的本地修复记录，待主 agent 独立复评。旧 01–08 修复回归未削弱，旧 10 入口位置偏离未改。迭代期间发现 Zod UTC ISO 要求秒字段，恢复解析器与正边界测试据实际契约修正后重跑通过。统计安全检查已按真实动作/category/basis、完成明细与热身策略筛选，仅检查实际计算操作数；无关训练或字段不再阻断。单结果绝对值上限 MAX_SAFE_INTEGER 用于避免不可靠累计数值，非新的训练统计定义。无 GUI、真机、真实 Access、远端、提交/推送或全局操作。
 
-最小独立复评：运行 `npx pnpm@10.34.5 test:integration`（重点 history-midnight、stats、exercises）及 `npx pnpm@10.34.5 test`（重点 restore、workouts）；比较两个受保护 OpenAPI 接口中的范围及状态码；按本页命令重跑全套。不要用本地 mock 或组件测试声称真实 Access/GUI 已验收。
+最小独立复评：运行 `npx pnpm@10.34.5 test:integration`（重点 history-midnight、stats、exercises）、`npx pnpm@10.34.5 test:mcp`（MCP 协议/工具面）及 `npx pnpm@10.34.5 test`（重点 restore、workouts、MCP SDK 客户端）；比较两个受保护 OpenAPI 接口中的范围及状态码；按本页命令重跑全套。不要用本地 mock 或组件测试声称真实 Access/GUI 已验收。
 
 本次独立复评追加修复（设计 1.6）：新写入继续使用严格安全范围，历史详情/列表/动作/JSON backup 使用兼容旧 finite 非负范围的 read schema（正整数保持 MAX_SAFE_INTEGER），不再将新写上限施加于已有记录。旧 distance=100000001 详情及完整导出 200，前端共用 toInput 可保留旧值供用户修正，修正 PUT 后统计 200。TS backup 与 Python restore 均保留旧 duration=31536001、次数及倍率，不重写快照。统计只检查实际选中操作数；run 超界不阻断 cycle/strength，未完成明细和默认排除热身不参与检查。summary 不计算配速，因此极小正距离本身不构成 summary 错误。受控 422 仍用于真正选中超界计算，绝不静默丢弃。
 
-## 受控导入增量（1.8）
+## ChatGPT 接入指南（开发与排障）
 
-单 AUD 保持；默认 service 只读，精确 ACCESS_IMPORT_TOKEN_IDS 授权的已验 service 增加 metadata capability `workouts:create`，仅 POST `/api/agent/v1/workouts`。总体 ACCESS_SERVICE_TOKEN_IDS 仍先检查。空/非法导入配置 fail closed，未配置不授权。human 管理入口不接受任何 service；所有 Agent PUT/PATCH/DELETE、POST exercises/settings/export/未知路径拒绝。读取命令仍为严格 GET 白名单。OpenAPI 允许文档出现条件 POST /workouts，绝不执行文档中的任意 URL。未发布线上。
+从 Skill 到 MCP Connector 的完整落地记录：为什么 skill 路线在网页版不可行、MCP 端的协议/认证/工具设计、对 ChatGPT 的硬性要求（SSE 响应、工具元数据、版本回显）、Cloudflare 边缘的三个拦截点与修复、三层证据排障法与凭据交付纪律。见 [docs/chatgpt-connector-guide.md](docs/chatgpt-connector-guide.md)。
 
-缺失动作先列待审批表（原名称、拟定语义、单位、原因），用户确认后由 human 建立，再替换真实 exerciseId 重新计划；不开放 Agent 动作创建，不修改归档历史。
+## MCP 服务器（设计 2.1 / 2.2）
+
+新增独立 Worker `mcp/`（healthworker-mcp）：为 ChatGPT 等外部客户端提供 MCP Streamable HTTP 只读入口，绕开网页版 skill python 沙箱无出站网络的平台限制。9 个工具：7 个只读（metadata/动作搜索/训练列表/训练详情/三类统计）映射现有 Agent API GET，2 个 **create-only** 写入（create_workout/create_exercise，与导入白名单身份权限一致，内容哈希幂等键，ChatGPT 对写操作要求用户确认）；无更新/删除/归档/管理工具，训练备注永不返回；上游 Access 凭据与路径令牌均为 Worker Secret（命令行不明文）。准入 = 连接 URL 内嵌的不可猜测路径令牌（常量时间比较，错误一律 404）。重定向一律拒绝，凭据不外跟随。测试含官方 SDK 客户端经真实 TCP 的兼容性套件。协议细节与安全边界见 design.md §9.6；报告见 docs/reviews/2026-09-16-mcp-worker-review.md。
+
+## 受控导入增量（1.8 / 2.0）
+
+单 AUD 保持；默认 service 只读，精确 ACCESS_IMPORT_TOKEN_IDS 授权的已验 service 增加 metadata capabilities `exercises:create` 与 `workouts:create`，仅 POST `/api/agent/v1/exercises` 与 `/api/agent/v1/workouts`。总体 ACCESS_SERVICE_TOKEN_IDS 仍先检查。空/非法导入配置 fail closed，未配置不授权。human 管理入口不接受任何 service；所有 Agent PUT/PATCH/DELETE、POST settings/export/未知路径拒绝。读取命令仍为严格 GET 白名单。OpenAPI 允许文档出现条件 POST /workouts 与 /exercises，绝不执行文档中的任意 URL。
+
+缺失动作在批量 JSON `exercises` 列表中声明（客户端选定稳定 UUID + 完整拟定语义），计划阶段列出待审批表；用户确认计划后由导入身份先创建动作、再创建训练（同名/指定 UUID 冲突/同 key 异正文 409，动作失败即停、后续训练 not_attempted）。Agent 创建固定非内置、未归档，不修改、归档或删除任何动作，也不更新/删除历史训练。
+
+本轮（设计 2.0）实测：`npx pnpm@10.34.5 typecheck`、`lint`、`format:check`、`build`、`test`（**51 passed**）、`test:integration`（**55 passed**）全部 exit 0；`python3 -m unittest discover -s tests/skill` 为 **47 tests / OK**。独立 review 通过（0 P0/P1，6 条 P3 建议已在部署前修复：CLI 倍率范围/trim/归档同名检查、Agent OpenAPI 条件权限描述与幂等 key 正则、README 状态矛盾、m1 覆盖收窄），报告见 docs/reviews/2026-09-15-agent-exercise-create-followup.md。
 
 ## 确定批量文件与确认命令
 
@@ -130,7 +141,7 @@ HEALTHWORKER_BASE_URL=http://127.0.0.1:5173 \
 ```
 
 ```sh
-# 在仓库根目录；凭证只从受保护环境读取，不填入命令行。
+# 在仓库根目录；凭证从私有 JSON 或受保护环境读取，不填入命令行。
 python3 skills/healthworker/scripts/healthworker.py validate --input .local/batch.json
 python3 skills/healthworker/scripts/healthworker.py plan --input .local/batch.json --plan .local/import-plan.json
 # 向用户展示 batch 正文、动作匹配、待建动作与疑似重复，并取得该计划的确认后：
@@ -149,8 +160,22 @@ validate/plan 先 metadata 能力检查，再本地结构/数值及当前动作�
 
 本轮重新运行 `corepack pnpm`（10.34.5）的 typecheck、lint、format:check、test、test:integration、build 及 Python unittest，全部通过：TS 单元/组件 **11 files / 51 passed**，隔离 workerd/D1 **6 files / 55 passed**，Python **39 tests / OK**。构建使用根配置，显式移除生产配置选择环境变量，不读取生产绑定、不发布；已知 Zod 注释与大 chunk 警告保留。未新增或改动应用逻辑、测试和 SQL 迁移。
 
-Skill 私有绑定已本地实现：显式 `HEALTHWORKER_CONFIG` 指向绝对 JSON 路径，仅含 baseUrl/clientId；Secret 仍只从安全进程环境读取。仓库私有绑定位于被忽略的 `.local/healthworker-client.json`（文件 0600、父目录 0700），不随 Skill 分发、不自动全局安装。环境优先但跨 origin 覆盖拒绝，读取与导入共用校验及脱敏；39 个 Python 测试包含这些离线回归。
+历史首次基线的 Skill 私有绑定（已被下述 1.9 配置替代）：显式 `HEALTHWORKER_CONFIG` 指向绝对 JSON 路径，仅含 baseUrl/clientId；Secret 仍只从安全进程环境读取。仓库私有绑定位于被忽略的 `.local/healthworker-client.json`（文件 0600、父目录 0700），不随 Skill 分发、不自动全局安装。环境优先但跨 origin 覆盖拒绝，读取与导入共用校验及脱敏；39 个 Python 测试包含这些离线回归。
 
 本轮授权仅为本地提交与归入 main。起点为无提交、0 tracked 的 `chore/project-bootstrap`，main 不存在，因此采用首次基线提交后创建 main 指向同一提交，而非伪造两条历史的 merge commit。现有 `.agents/skills/healthworker-review` 原样保留为独立审查工具；其中历史缺口/契约示例须以当前设计、代码和实测为准。
 
-生产状态沿用首次部署证据，本轮未访问远端：线上仍为旧只读 Agent 版本，受控导入与 Skill 私有配置增量仅本地完成，未发布、未执行生产导入。真实 OTP/Service Token 身份隔离、导入授权、完整 GUI/真机及 p95 性能验收仍未完成；本地测试和首次基线不代表这些验收通过。
+生产状态以 [docs/deployment.md](docs/deployment.md) 顶部实测记录为准：Agent 自动创建缺失动作版本（设计 2.0）已发布生产（版本 16d536a7，迁移 0002 已应用）并通过真实 Service Token 验证；首批真实数据已通过受控导入写入——4 个新建动作 + 3 次训练 73 组全部成功，生产现为 7 动作 / 3 完成训练（2026-09-09 至 2026-09-13），力量统计与手记核对一致。真实 OTP 完整矩阵、完整 GUI/真机及 p95 性能验收仍未完成；本地测试不代表这些验收通过。
+
+## Skill 私有 JSON 默认配置（设计 1.9）
+
+默认文件为 `skills/healthworker/client.local.json`，包含 `baseUrl`、`clientId`、`clientSecret`；已被精确 gitignore。仅本地单用户使用：文件当前用户所有且 0600，父目录当前用户所有且禁止 group/world 写入，支持现有 0755 Skill 目录，不批量 chmod。默认路径相对脚本，不依赖当前工作目录；无需 env：
+
+```sh
+python3 skills/healthworker/scripts/healthworker.py metadata
+```
+
+`HEALTHWORKER_CONFIG` 可显式选择绝对替代路径，base/ID/secret 环境变量优先，但 origin 必须与 JSON 绑定一致。默认文件不存在保留 env-only；显式文件缺失、权限不安全、未知/重复字段、非法值或超 16 KiB 均安全拒绝。仅执行命令时读取，help/模块导入不读 Secret。GET 与受控导入共享最终配置、脱敏及 plan/journal 凭证拒绝；配置本身不授予导入授权。
+
+不要提交或公开打包该文件，`.gitignore` 不保护手工复制/打包。用户可私下携带至可信单用户安装并保持 0600，但这会复制实时访问权限、增加同用户进程/ACL/备份泄漏风险。公开示例仅假值；聊天中暴露的 Secret 建议轮换。本轮不执行生产 POST、发布或 Cloudflare 更改。
+
+本轮实测：Python **46 tests / OK**（合成临时配置隔离，含 GET/导入 JSON Secret、默认/替代路径、环境覆盖、权限/owner/symlink/大小/重复字段、脱敏与 plan/journal 拒绝）；typecheck、lint、format:check、build 通过。首次 format:check 因既有审查 Skill 的 3 个 Markdown 文件格式失败，仅格式化后通过。构建保留已知 Zod 注释与大 chunk 警告。真实默认 JSON metadata GET 返回客户端 `AUTHENTICATION` 错误；未跟随跳转或绕过，未取得 capabilities，不能宣称真实认证或 workouts:create 验收通过。

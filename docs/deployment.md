@@ -1,5 +1,44 @@
 # 本地环境、恢复与生产部署
 
+## 只读 MCP 服务器部署实测（2026-09-16 UTC）
+
+用户授权后，已按设计 2.1（§9.6）部署独立 Worker `healthworker-mcp`（MCP Streamable HTTP 无状态只读子集，7 个只读工具映射现有 Agent API GET；主 Worker 与 Access 边界不变）。实现、测试与独立 review（0 阻塞，5 条 P3 已修复）见 [docs/reviews/2026-09-16-mcp-worker-review.md](reviews/2026-09-16-mcp-worker-review.md)。
+
+- 全量验证通过：typecheck、lint、format:check、build、TS 单元 **12 files / 55 passed**（含官方 `@modelcontextprotocol/sdk` 客户端经真实 TCP 的兼容性测试）、MCP 池 **2 files / 18 passed**、集成 **6 files / 55 passed**、Python **47 tests / OK**。
+- 部署：workers.dev 直连（`https://healthworker-mcp.<subdomain>.workers.dev`），三个 Secret（上游 Access 凭据 ×2 + 路径令牌）经受保护文件 stdin 写入，不在命令行明文出现。期间发现并修复一个线上缺陷：workerd 不支持 `redirect: 'error'`，改为 `redirect: 'manual'` + 显式拒绝 3xx（凭据绝不跟随重定向），并以永久测试钉住。
+- 线上 6 步端到端验证通过：initialize、tools/list（7 工具）、get_metadata（`authentication=access`、3 次训练）、search_exercises（中文查询）、get_strength_stats（宽距高位下拉 21 组/69 kg/8728 容量）、get_summary_stats（3 次完成）。
+- 已知边界：workers.dev 边缘与主域同样按 User-Agent 拦截部分自动化请求（`error code: 1010`），手写验证脚本须带自定义 UA；**真实 ChatGPT 连接器端到端属用户侧人工验收**（A22），本部署不等于该验收完成。
+- 建议后续将 MCP Worker 的上游凭据更换为未加入导入白名单的只读 Service Token（轮换两个 Secret 即可）。
+
+## 保存后离开弹窗修复更新实测（2026-09-16 UTC）
+
+用户授权"同步部署"后，已将保存成功后多余离开确认弹窗的前端修复发布至生产（root cause 与验证见 [docs/reviews/2026-09-16-save-navigation-guard-fix.md](reviews/2026-09-16-save-navigation-guard-fix.md)）。纯前端行为修复：无迁移、无 API/schema/统计变更。
+
+- 发布前全量验证通过：typecheck、lint、format:check、TS 单元/组件 **11 files / 52 passed**（含新增回归测试，已证明修复前失败）、workerd/D1 集成 **6 files / 55 passed**、Python **47 tests / OK**；本地 dev 手机视口（390×844）浏览器复验保存后直接跳转详情页、无弹窗。
+- 私有配置生产 build + dry-run 干净；远端 `d1_migrations` 确认 0000/0001/0002 全部已应用。交互 PTY `deploy --strict --no-autoconfig` 成功，无意外资源提示，100% 流量。
+- 线上验证：无凭证根路径与 API 均 302 Access 拦截；Service Token metadata 正常（`authentication=access`，capabilities 含 `exercises:create`/`workouts:create`，coverage 3 次完成训练）。版本与证据保存在被忽略的私有部署记录中。
+- 修复后的真实页面保存流程未在生产页面以人类身份操作（需 OTP 登录，未执行）；真机验收仍未完成。
+
+## Agent 自动创建缺失动作更新实测（2026-09-15 UTC）
+
+用户授权的 exercises:create 增量（设计 2.0）已发布生产。流程与证据：全量验证（typecheck、lint、format:check、build、TS 51、workerd/D1 55、Python 47）→ 独立 review 通过（0 P0/P1，6 条 P3 建议已在部署前修复，报告见 docs/reviews/2026-09-15-agent-exercise-create-followup.md）→ 私有配置生产 build + dry-run（绑定生产 D1，无本地 mock）→ 只读核对远端 `d1_migrations` 后，追加迁移 0002（无操作 PRAGMA 占位，不改数据）remote apply 成功 → 交互 PTY `deploy --strict --no-autoconfig` 成功，无意外资源提示，100% 流量。版本与完整证据保存在被忽略的私有部署记录中。
+
+- 真实 Service Token 线上验证通过：Agent metadata capabilities 含 `exercises:create` 与 `workouts:create`，`authentication=access`，timezone=Asia/Shanghai；coverage 保持 3 动作 / 0 训练。
+- 零写入路由验证：导入身份对 POST `/api/agent/v1/exercises` 提交无效 body / 缺幂等 key 均被 Worker Zod 400 `VALIDATION_ERROR` 拒绝，证明中间件放行与路由校验生效且未创建任何资源。
+- 旧问题定性：此前记录的“Python urllib 同路径返回 403，尚未确定原因”确认为 Cloudflare 边缘按 User-Agent 签名拦截（`error code: 1010`）。Skill CLI 使用自定义 `HealthWorker-Skill/1` UA 且禁用环境代理，不受影响；手写 urllib 验证脚本必须同样处理。
+- 真实训练导入已执行（2026-09-15）：用户确认后运行 `import --confirm`，7/7 条目全部成功（4 动作创建 + 3 训练，无重放）；生产计数 exercises=7、workouts=3、entries=11、strength_sets=73、idempotency_keys=7，metadata coverage 为 3 次完成训练（2026-09-09 至 2026-09-13）。Skill 力量统计端到端验证：宽距高位下拉 maxLoadKg 49→59→69、逐次容量 2672/2832/3224 kg·reps，与手记数据一致。
+- 本轮未运行浏览器或真机验收。下方历史小节中“未发布/待授权”描述以各节时间为准。
+
+## 受控 Agent 创建更新实测（2026-09-14 UTC）
+
+用户授权后，已将审查修复后的受控创建实现更新至现有生产 Worker。发布前核对现有远端版本，使用既有私有生产配置重新构建、校验产物并 dry-run；交互 PTY `deploy --strict --no-autoconfig` 成功，无意外资源提示。最新部署 100% 流量，远端 vars / D1 与私有配置一致。没有新建数据库、执行迁移、修改 Access 或覆盖域名。版本与完整证据保存在被忽略的私有部署记录中。
+
+- typecheck、lint、format:check、51 项 TS、55 项 workerd/D1、39 项 Python 测试，以及 production build / dry-run 全部通过；既有构建警告仍在。
+- 生产只读计数确认仍无训练。无凭证 curl 对根、人类 workouts、Agent metadata/workouts、未知 API 均返回 Access 302，未跟随。Python urllib 同路径返回 403，尚未确定原因，不视为 Agent 成功。
+- 现有导入 Client ID 的精确授权配置已随版本发布；普通 Token 仍只读，导入身份也仅允许 POST 新训练，禁止历史更新/删除、动作写入和管理接口。
+- **真实 Agent 验收及导入尚未完成**：当前环境缺少 Client Secret，未执行已认证 metadata、计划或导入；没有用 human 或 D1 写入替代。已准备私有 metadata-only 手动验收入口，不默认 POST。不重复要求用户开发或部署应用。
+- 本轮未运行浏览器或真机验收。下方“未发布/待授权”内容是历史准备状态，当前发布进度以本节为准。
+
 ## 首次生产部署实测（2026-09-14 UTC）
 
 用户明确授权后，已发布 <https://health.tokenflare.top>，创建独立生产 D1 并应用既有 `0000_silent_liz_osborn.sql`、`0001_workout_guards.sql`。核验 `seeds/local.sql` 仅三条合成内置动作后用于初始化；没有导入本地数据库或测试训练。动作/内置动作均为 3，workouts、workout_entries、strength_sets、cardio_records、settings、idempotency_keys、workout_write_guards 均为 0。迁移列表无待应用项。
