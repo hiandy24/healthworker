@@ -4,3 +4,4 @@ dist
 .local
 pnpm-lock.yaml
 migrations/meta
+skills/healthworker/client.local.json
