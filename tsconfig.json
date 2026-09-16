@@ -22,5 +22,5 @@
     ],
     "noEmit": true
   },
-  "include": ["src", "tests", "*.ts"]
+  "include": ["src", "mcp", "tests", "*.ts"]
 }

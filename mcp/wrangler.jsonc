@@ -1,0 +1,12 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "healthworker-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-13",
+  "workers_dev": true,
+  "routes": [{ "pattern": "mcp.tokenflare.top", "custom_domain": true }],
+  "observability": { "enabled": false },
+  "vars": {
+    "AGENT_BASE_URL": "https://health.tokenflare.top",
+  },
+}
