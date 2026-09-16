@@ -254,21 +254,126 @@ describe('protected API routing (A12/A13)', () => {
       ).not.toBe(original.data.id);
       const meta = await create(service, importing, 'GET', '/metadata');
       expect(await meta.json()).toMatchObject({
-        data: { capabilities: expect.arrayContaining(['workouts:create']) },
+        data: {
+          capabilities: expect.arrayContaining([
+            'exercises:create',
+            'workouts:create',
+          ]),
+        },
       });
-      for (const method of ['PUT', 'PATCH', 'DELETE', 'POST'])
+      // Import-authorized service identities may create exercises and
+      // workouts only; every other write stays blocked.
+      for (const path of [
+        '/settings',
+        '/export',
+        '/unknown',
+        '/workouts/' + original.data.id,
+      ])
+        expect((await create(service, importing, 'POST', path)).status).toBe(
+          405,
+        );
+      for (const method of ['PUT', 'PATCH', 'DELETE'])
         for (const path of [
-          '/settings',
-          '/export',
-          '/unknown',
+          '/workouts',
           '/exercises',
           '/workouts/' + original.data.id,
         ])
           expect((await create(service, importing, method, path)).status).toBe(
             405,
           );
-      for (const method of ['PUT', 'PATCH', 'DELETE'])
-        expect((await create(service, importing, method)).status).toBe(405);
+      const exercise = {
+        id: '00000000-0000-4000-8000-0000000000e1',
+        name: 'Synthetic agent lat pulldown',
+        aliases: [] as string[],
+        kind: 'strength',
+        equipment: null,
+        muscleGroups: [] as string[],
+        measurementMode: 'reps',
+        resistanceMode: 'external',
+        loadConvention: 'total',
+        repConvention: 'total',
+        volumeMultiplier: null,
+        cardioCategory: null,
+      };
+      const createExercise = (
+        key: string,
+        body: Record<string, unknown> = exercise,
+        settings: typeof importing | typeof production = importing,
+        token: string = service,
+      ) =>
+        app.request(
+          `${production.APP_ORIGIN}/api/agent/v1/exercises`,
+          {
+            method: 'POST',
+            headers: {
+              'Cf-Access-Jwt-Assertion': token,
+              'Content-Type': 'application/json',
+              'Idempotency-Key': key,
+            },
+            body: JSON.stringify(body),
+          },
+          settings,
+        );
+      expect(
+        (
+          await createExercise('synthetic-exercise-key', exercise, {
+            ...importing,
+            ACCESS_IMPORT_TOKEN_IDS: 'other-client',
+          })
+        ).status,
+      ).toBe(405);
+      expect(
+        (
+          await createExercise(
+            'synthetic-exercise-key',
+            exercise,
+            production,
+            human,
+          )
+        ).status,
+      ).toBe(403);
+      const exerciseCreated = await createExercise('synthetic-exercise-key');
+      expect(exerciseCreated.status).toBe(201);
+      const exerciseOriginal = (await exerciseCreated.json()) as {
+        data: { id: string; name: string; isBuiltin: boolean };
+        meta: { replayed: boolean };
+      };
+      expect(exerciseOriginal.data.id).toBe(
+        '00000000-0000-4000-8000-0000000000e1',
+      );
+      expect(exerciseOriginal.data.isBuiltin).toBe(false);
+      expect(exerciseOriginal.meta.replayed).toBe(false);
+      const exerciseReplay = await createExercise('synthetic-exercise-key');
+      expect(exerciseReplay.status).toBe(201);
+      expect(await exerciseReplay.json()).toMatchObject({
+        data: { id: exerciseOriginal.data.id },
+        meta: { replayed: true },
+      });
+      const keyConflict = await createExercise('synthetic-exercise-key', {
+        ...exercise,
+        name: 'Different synthetic name',
+      });
+      expect(keyConflict.status).toBe(409);
+      expect(await keyConflict.json()).toMatchObject({
+        error: { code: 'IDEMPOTENCY_CONFLICT' },
+      });
+      const nameConflict = await createExercise('another-exercise-key', {
+        ...exercise,
+        id: crypto.randomUUID(),
+      });
+      expect(nameConflict.status).toBe(409);
+      expect(await nameConflict.json()).toMatchObject({
+        error: { code: 'EXERCISE_EXISTS' },
+      });
+      const idConflict = await createExercise('third-exercise-key', {
+        ...exercise,
+        name: 'Synthetic agent row',
+        id: '00000000-0000-4000-8000-0000000000e1',
+      });
+      expect(idConflict.status).toBe(409);
+      expect(await idConflict.json()).toMatchObject({
+        error: { code: 'EXERCISE_ID_EXISTS' },
+      });
       for (const [method, path] of [
         ['GET', '/metadata'],
         ['GET', '/settings'],
@@ -429,9 +534,10 @@ describe('protected API routing (A12/A13)', () => {
         string,
         unknown
       >;
-      expect(Object.keys(exerciseMethods)).toEqual(
-        prefix.includes('agent') ? ['get'] : ['get', 'post'],
-      );
+      // Both surfaces advertise create; only the agent route requires an
+      // Idempotency-Key header and is runtime-gated to import-allowlisted
+      // service identities.
+      expect(Object.keys(exerciseMethods)).toEqual(['get', 'post']);
       expect(document.servers[0]?.url).toBe(prefix);
       for (const methods of Object.values(document.paths))
         for (const operation of Object.values(methods))

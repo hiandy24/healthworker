@@ -61,9 +61,48 @@ def execute(hw, args, client, env):
     metadata = client.metadata()
     check('workouts:create' in metadata['data']['capabilities'], 'Token lacks workouts:create; ask the owner, never bypass authentication.')
     batch = load(args.input)
-    check(type(batch) is dict and set(batch) == {'version', 'batchId', 'workouts'})
+    check(type(batch) is dict and set(batch) in ({'version', 'batchId', 'workouts'}, {'version', 'batchId', 'workouts', 'exercises'}))
     check(batch['version'] == 1)
     input_uuid(batch['batchId'])
+    declared = batch.get('exercises', [])
+    check(type(declared) is list and len(declared) <= 100)
+    declared_ids = set()
+    declared_names = set()
+
+    def trimmed(value):
+        # The server Zod trims names/aliases/equipment/muscleGroups; a value that
+        # changes under trim would silently diverge from the plan's hashes/matches.
+        return isinstance(value, str) and value == value.strip()
+
+    exercise_fields = {'name', 'aliases', 'kind', 'equipment', 'muscleGroups', 'cardioCategory',
+                       'measurementMode', 'resistanceMode', 'loadConvention', 'repConvention', 'volumeMultiplier'}
+    for row in declared:
+        check(type(row) is dict and set(row) == {'id', 'body'})
+        input_uuid(row['id'])
+        check(row['id'] not in declared_ids)
+        declared_ids.add(row['id'])
+        body = row['body']
+        check(type(body) is dict and set(body) == exercise_fields)
+        check(bool(body['name']) and hw.bounded_text(body['name'], 200) and trimmed(body['name']))
+        check(type(body['aliases']) is list and len(body['aliases']) <= 20 and all(hw.bounded_text(alias, 200) and alias and trimmed(alias) for alias in body['aliases']))
+        check(body['equipment'] is None or (hw.bounded_text(body['equipment'], 100) and trimmed(body['equipment'])))
+        check(type(body['muscleGroups']) is list and len(body['muscleGroups']) <= 20 and all(hw.bounded_text(group, 100) and group and trimmed(group) for group in body['muscleGroups']))
+        check(body['kind'] in ('strength', 'cardio'))
+        if body['kind'] == 'cardio':
+            check(body['cardioCategory'] in ('run', 'walk', 'cycle', 'swim', 'row', 'elliptical', 'other'))
+            check(body['measurementMode'] == 'cardio' and body['resistanceMode'] is None
+                  and body['loadConvention'] == 'none' and body['repConvention'] == 'not_applicable')
+        else:
+            check(body['cardioCategory'] is None)
+            check(body['measurementMode'] in ('reps', 'duration') and body['resistanceMode'] in ('external', 'bodyweight', 'assisted'))
+            check((body['repConvention'] == 'not_applicable') == (body['measurementMode'] == 'duration'))
+        check(body['volumeMultiplier'] is None or (type(body['volumeMultiplier']) in (int, float) and math.isfinite(body['volumeMultiplier'])
+              and 0.001 <= body['volumeMultiplier'] <= 1000 and body['resistanceMode'] == 'external'
+              and body['measurementMode'] == 'reps' and body['loadConvention'] != 'none'))
+        check(body['name'] not in declared_names, 'Duplicate declared exercise name.')
+        declared_names.add(body['name'])
+    if declared:
+        check('exercises:create' in metadata['data']['capabilities'], 'Token lacks exercises:create; ask the owner, never bypass authentication.')
     check(type(batch['workouts']) is list and 1 <= len(batch['workouts']) <= 1000)
     source_hash = digest(batch)
     identities = set()
@@ -132,11 +171,25 @@ def execute(hw, args, client, env):
             notes(entry['notes'])
         check(set_count <= 300)
         # Server Zod remains authoritative and rechecks concurrent exercise state.
+    referenced = {entry['exerciseId'] for row in batch['workouts'] for entry in row['body']['entries']}
+    check(declared_ids <= referenced, 'Declared exercise is not referenced by any workout; remove it from the batch.')
 
     if args.command in ('validate', 'plan'):
-        exercises = client.pages('exercises', {'includeArchived': 'false'}, 100, 10000)
-        check(not exercises['meta']['truncated'], 'Exercise lookup truncated; resolve manually.')
-        definitions = {e['id']: e for e in exercises['data']}
+        # Pull archived rows too: name collisions must consider archived exercises
+        # (the server 409s on any same-name create), while new references may only
+        # match non-archived definitions.
+        catalog = client.pages('exercises', {'includeArchived': 'true'}, 100, 10000)
+        check(not catalog['meta']['truncated'], 'Exercise lookup truncated; resolve manually.')
+        definitions = {e['id']: e for e in catalog['data'] if e['archivedAt'] is None}
+        catalog_names = {e['name'] for e in catalog['data']}
+        for row in declared:
+            check(row['body']['name'] not in catalog_names,
+                  'Declared exercise name already exists on the server (including archived); match it instead of creating a duplicate.')
+            check(row['id'] not in definitions and row['id'] not in {e['id'] for e in catalog['data']},
+                  'Declared exercise id already exists on the server.')
+            definitions[row['id']] = {'id': row['id'], 'kind': row['body']['kind'],
+                                      'measurementMode': row['body']['measurementMode'],
+                                      'resistanceMode': row['body']['resistanceMode']}
         unmatched = sorted({e['exerciseId'] for r in batch['workouts'] for e in r['body']['entries'] if e['exerciseId'] not in definitions})
         for row in batch['workouts']:
             for entry in row['body']['entries']:
@@ -161,6 +214,9 @@ def execute(hw, args, client, env):
         plan = {'version': 1, 'batchId': batch['batchId'], 'sourceHash': source_hash,
                 'origin': client.base, 'unmatchedExerciseIds': unmatched,
                 'suspectedDuplicates': suspected, 'validation': 'structural only; server validates full measurement constraints',
+                'createExercises': [{'id': row['id'], 'name': row['body']['name'], 'bodyHash': digest(row['body']),
+                                     'key': 'hw-' + digest([batch['batchId'], 'exercise', row['id'], digest(row['body'])])}
+                                    for row in sorted(declared, key=lambda row: row['id'])],
                 'items': [{'sourceId': r['sourceId'], 'bodyHash': digest(r['body']),
                            'key': 'hw-' + digest([batch['batchId'], r['sourceId'], digest(r['body'])])} for r in batch['workouts']]}
         plan['confirmation'] = digest(plan)
@@ -172,10 +228,14 @@ def execute(hw, args, client, env):
     check(confirmation == digest(plan) and args.confirm == confirmation, 'Explicit confirmation must equal the reviewed plan hash.')
     check(plan['sourceHash'] == source_hash and plan['batchId'] == batch['batchId'] and plan['origin'] == client.base,
           'Input/origin changed. Do not reuse this plan; review a new batch without overwriting history.')
-    check(not plan['unmatchedExerciseIds'], 'Missing exercises require user confirmation and human creation, then a new plan.')
+    check(not plan['unmatchedExerciseIds'], 'Missing exercises must be declared in the batch exercises list or matched to existing server definitions; review a new plan.')
     expected = [{'sourceId': r['sourceId'], 'bodyHash': digest(r['body']),
                  'key': 'hw-' + digest([batch['batchId'], r['sourceId'], digest(r['body'])])} for r in batch['workouts']]
     check(plan['items'] == expected)
+    expected_exercises = [{'id': row['id'], 'name': row['body']['name'], 'bodyHash': digest(row['body']),
+                           'key': 'hw-' + digest([batch['batchId'], 'exercise', row['id'], digest(row['body'])])}
+                          for row in sorted(declared, key=lambda row: row['id'])]
+    check(plan.get('createExercises', []) == expected_exercises, 'Plan createExercises mismatch; review a new plan.')
     # Bind private journal to origin and credential identity without storing Client ID/secret.
     principal_hash = digest(client.headers.get('CF-Access-Client-Id', 'local_mock'))
     journal_path = args.plan + '.journal.json'
@@ -189,29 +249,43 @@ def execute(hw, args, client, env):
         if Path(journal_path).exists():
             journal = load(journal_path)
             check(journal['confirmation'] == confirmation and journal['principalHash'] == principal_hash)
+            journal.setdefault('exerciseResults', {})
         else:
-            journal = {'confirmation': confirmation, 'principalHash': principal_hash, 'results': {}}
+            journal = {'confirmation': confirmation, 'principalHash': principal_hash, 'exerciseResults': {}, 'results': {}}
             save(journal_path, journal, True)
-        for row, item in zip(batch['workouts'], expected):
-            key = item['key']
-            previous = journal['results'].get(key)
-            if previous and previous['status'] == 'success': continue
+
+        def attempt(section, body, key, create, summarize):
+            previous = journal[section].get(key)
+            if previous and previous['status'] == 'success': return True
             now = time.time()
             first = previous['firstAttempt'] if previous else now
             # Never replay an uncertain create beyond the backend's 24h retention window.
             if now - first >= 23 * 3600:
-                journal['results'][key] = {'status': 'needs_reconciliation', 'firstAttempt': first}
-                save(journal_path, journal); continue
-            journal['results'][key] = {'status': 'pending', 'firstAttempt': first}
+                journal[section][key] = {'status': 'needs_reconciliation', 'firstAttempt': first}
+                save(journal_path, journal); return False
+            journal[section][key] = {'status': 'pending', 'firstAttempt': first}
             save(journal_path, journal)
             try:
-                response = client.create_workout(row['body'], key)
-                result = {'status': 'success', 'firstAttempt': first, 'workoutId': response['data']['id'], 'replayed': response['meta']['replayed']}
+                journal[section][key] = {'status': 'success', 'firstAttempt': first, **summarize(create(body, key))}
             except hw.ClientError as error:
-                result = {'status': 'failed', 'firstAttempt': first, 'errorCode': error.code}
-            journal['results'][key] = result
+                journal[section][key] = {'status': 'failed', 'firstAttempt': first, 'errorCode': error.code}
             save(journal_path, journal)
-        results = [{'sourceId': item['sourceId'], **journal['results'][item['key']]} for item in expected]
-        return {'data': results, 'meta': {'allSucceeded': all(r['status'] == 'success' for r in results), 'atomicBatch': False}}
+            return journal[section][key]['status'] == 'success'
+
+        # Create approved exercise definitions first; stop at the first failure so
+        # workouts that reference a missing exercise are never attempted.
+        for item in expected_exercises:
+            body = next(row['body'] for row in declared if row['id'] == item['id'])
+            if not attempt('exerciseResults', {'id': item['id'], **body}, item['key'], client.create_exercise,
+                           lambda response: {'exerciseId': response['data']['id'], 'replayed': response['meta']['replayed']}):
+                break
+        if all(journal['exerciseResults'][item['key']]['status'] == 'success' for item in expected_exercises):
+            for row, item in zip(batch['workouts'], expected):
+                attempt('results', row['body'], item['key'], client.create_workout,
+                        lambda response: {'workoutId': response['data']['id'], 'replayed': response['meta']['replayed']})
+        exercise_results = [{'exerciseId': item['id'], 'name': item['name'], **journal['exerciseResults'][item['key']]} for item in expected_exercises]
+        results = [{'sourceId': item['sourceId'], **journal['results'].get(item['key'], {'status': 'not_attempted'})} for item in expected]
+        return {'data': {'exercises': exercise_results, 'workouts': results},
+                'meta': {'allSucceeded': all(r['status'] == 'success' for r in exercise_results + results), 'atomicBatch': False}}
     finally:
         os.unlink(lock_path)

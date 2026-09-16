@@ -17,13 +17,13 @@
 | `/settings`                                          | GET、PATCH       | 无                   |
 | `/export`                                            | GET              | 无                   |
 
-所有入口验证 Access JWT、共同 issuer/单 ACCESS_AUD/签名/有效期；人类入口要求已验 owner 邮箱、非空 sub 且无 common_name，Agent 入口 service-only（已验 common_name Client ID、空 sub、无 email），两者 type 均为 app，混合/未知形状拒绝。可选 ACCESS_SERVICE_TOKEN_IDS 进一步限制 service；旧双 AUD 不读取。OpenAPI security 为 Cf-Access-Jwt-Assertion，CLI 仍向边缘发送 Service Token 两个头，人类写入另需精确同源 Origin 与 application/json（包括 DELETE）。普通只读 Agent 非 GET 返回 405；导入身份仅额外允许精确 POST workouts，其他非 GET（含 HEAD/OPTIONS）仍返回 405；无 settings/export 或人类入口回退权限。未知 API 返回 JSON 404，不返回 SPA。数据响应 no-store。
+所有入口验证 Access JWT、共同 issuer/单 ACCESS_AUD/签名/有效期；人类入口要求已验 owner 邮箱、非空 sub 且无 common_name，Agent 入口 service-only（已验 common_name Client ID、空 sub、无 email），两者 type 均为 app，混合/未知形状拒绝。可选 ACCESS_SERVICE_TOKEN_IDS 进一步限制 service；旧双 AUD 不读取。OpenAPI security 为 Cf-Access-Jwt-Assertion，CLI 仍向边缘发送 Service Token 两个头，人类写入另需精确同源 Origin 与 application/json（包括 DELETE）。普通只读 Agent 非 GET 返回 405；导入身份仅额外允许精确 POST workouts 与 POST exercises，其他非 GET（含 HEAD/OPTIONS）仍返回 405；无 settings/export 或人类入口回退权限。未知 API 返回 JSON 404，不返回 SPA。数据响应 no-store。
 
 普通响应 `{data,meta}`，meta 含当前请求 requestId（与 X-Request-Id 一致，幂等重放也不沿用旧 ID）；错误 `{error:{code,message,fields?},requestId}`。OpenAPI 是原始文档，导出是原始附件，不是 data envelope。400 表示 JSON/查询/游标/版本格式错误，401/403 认证或权限错误，404 不存在，409 幂等正文不一致或引用竞争，412 版本冲突，428 缺版本，422 字段/计量错误或统计过密，413 请求体/导出超限，503 认证配置缺失，500 安全内部错误。边缘 Access HTML/重定向不是合法 JSON 成功响应。
 
 ## Metadata
 
-apiVersion/schemaVersion/definitionsVersion 均为字符串 `1`。`milestone=M1` 仅保留为旧契约兼容标记，**不是当前功能范围或验收状态**；以 capabilities 与 review 记录判断。人类 capabilities 为 metadata/openapi/exercises/workouts/stats/settings/export；Agent 不含 settings/export；仅导入身份额外含 workouts:create。
+apiVersion/schemaVersion/definitionsVersion 均为字符串 `1`。`milestone=M1` 仅保留为旧契约兼容标记，**不是当前功能范围或验收状态**；以 capabilities 与 review 记录判断。人类 capabilities 为 metadata/openapi/exercises/workouts/stats/settings/export；Agent 不含 settings/export；仅导入身份额外含 exercises:create 与 workouts:create。
 
 units 为 kg/g/m/s/bpm；dateBasis=workout_local_date、rangeSemantics=[from,to)、weekStartsOn=monday、warmupDefault=exclude。timezone 读取设置，未持久化时虚拟 UTC，不代表用户确认；schema 为兼容仍允许 null。coverage 为全库训练/完成/草稿数及各自实际首末 localDate（无数据为 null），不是查询范围；authentication 为 access 或 local_mock。
 
@@ -65,8 +65,10 @@ GET export 默认 format=json；CSV 使用 format=csv 与 dataset=workouts/stren
 
 本次独立复评追加修复（设计 1.6）：新写入继续使用严格安全范围，历史详情/列表/动作/JSON backup 使用兼容旧 finite 非负范围的 read schema（正整数保持 MAX_SAFE_INTEGER），不再将新写上限施加于已有记录。旧 distance=100000001 详情及完整导出 200，前端共用 toInput 可保留旧值供用户修正，修正 PUT 后统计 200。TS backup 与 Python restore 均保留旧 duration=31536001、次数及倍率，不重写快照。统计只检查实际选中操作数；run 超界不阻断 cycle/strength，未完成明细和默认排除热身不参与检查。summary 不计算配速，因此极小正距离本身不构成 summary 错误。受控 422 仍用于真正选中超界计算，绝不静默丢弃。
 
-## 受控导入增量（1.8）
+## 受控导入增量（1.8 / 1.9）
 
-单 AUD 保持；默认 service 只读，精确 ACCESS_IMPORT_TOKEN_IDS 授权的已验 service 增加 metadata capability `workouts:create`，仅 POST `/api/agent/v1/workouts`。总体 ACCESS_SERVICE_TOKEN_IDS 仍先检查。空/非法导入配置 fail closed，未配置不授权。human 管理入口不接受任何 service；所有 Agent PUT/PATCH/DELETE、POST exercises/settings/export/未知路径拒绝。读取命令仍为严格 GET 白名单。OpenAPI 允许文档出现条件 POST /workouts，绝不执行文档中的任意 URL。未发布线上。
+单 AUD 保持；默认 service 只读，精确 ACCESS_IMPORT_TOKEN_IDS 授权的已验 service 增加 metadata capabilities `exercises:create` 与 `workouts:create`，仅 POST `/api/agent/v1/exercises` 与 `/api/agent/v1/workouts`。总体 ACCESS_SERVICE_TOKEN_IDS 仍先检查。空/非法导入配置 fail closed，未配置不授权。human 管理入口不接受任何 service；所有 Agent PUT/PATCH/DELETE、POST settings/export/未知路径拒绝。读取命令仍为严格 GET 白名单。OpenAPI 允许文档出现条件 POST /workouts 与 /exercises，绝不执行文档中的任意 URL。
 
-缺失动作先列待审批表（原名称、拟定语义、单位、原因），用户确认后由 human 建立，再替换真实 exerciseId 重新计划；不开放 Agent 动作创建，不修改归档历史。
+Agent 动作创建接受可选客户端选定稳定 UUID（供批量导入前向引用），必须 `Idempotency-Key` 与 application/json；同 key 同正文重放原始响应并标记 meta.replayed，同 key 异正文 409 IDEMPOTENCY_CONFLICT，同名 409 EXERCISE_EXISTS，指定 UUID 已占用 409 EXERCISE_ID_EXISTS。创建在单个原子 D1 batch 中条件执行：同名/同 ID 竞争不落地，replay 记录仅在动作行真实写入时生成，失败整体回滚；新建动作固定非内置、未归档。人类管理仍保留同名动作能力，故不施加 schema 级名称唯一约束。Agent 不修改、归档或删除动作，不更新/删除历史训练。
+
+缺失动作由批量 JSON `exercises` 列表声明（客户端选定 UUID + 完整拟定语义），计划列出待审批表；用户确认计划后导入身份先创建动作、再创建训练。同名、无引用声明、能力缺失均 fail closed；Skill 详见 references/api.md。

@@ -1,4 +1,5 @@
 {
   "baseUrl": "https://synthetic.invalid",
-  "clientId": "synthetic-client-id"
+  "clientId": "synthetic-client-id",
+  "clientSecret": "synthetic-secret-replace-privately"
 }

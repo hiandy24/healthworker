@@ -23,6 +23,9 @@ __pycache__/
 *.py[cod]
 
 # Private local data and backups
+/skills/healthworker/client.local.json
+# Skill distribution packages carry the private client.local.json secret
+/skills/*.zip
 .local/
 backups/
 exports/

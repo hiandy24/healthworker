@@ -75,7 +75,7 @@ app.use('*', async (c, next) => {
     agent &&
     c.get('canImport') === true &&
     c.req.method === 'POST' &&
-    path === '/api/agent/v1/workouts';
+    (path === '/api/agent/v1/workouts' || path === '/api/agent/v1/exercises');
   if (agent && c.req.method !== 'GET' && !importCreate) {
     c.header('Allow', 'GET');
     return c.json(
@@ -186,7 +186,7 @@ for (const prefix of ['/api/v1', '/api/agent/v1']) {
               'stats',
               ...(prefix.includes('agent')
                 ? c.get('canImport') === true
-                  ? ['workouts:create']
+                  ? ['exercises:create', 'workouts:create']
                   : []
                 : ['settings', 'export']),
             ] as (
@@ -197,6 +197,7 @@ for (const prefix of ['/api/v1', '/api/agent/v1']) {
               | 'stats'
               | 'settings'
               | 'export'
+              | 'exercises:create'
               | 'workouts:create'
             )[],
             coverage: {

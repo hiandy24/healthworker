@@ -8,7 +8,7 @@ JSON uses camelCase. Null means missing/not applicable, not zero. Fields below d
 
 ## Metadata
 
-`apiVersion`, `schemaVersion`, `definitionsVersion` are strings `1`. `milestone=M1` is a legacy compatibility marker, not current implementation or acceptance status; ordinary read-only Agent capabilities are `metadata`, `openapi`, `exercises`, `workouts`, `stats`; authorized import identities additionally advertise `workouts:create`. Human metadata additionally advertises `settings` and `export`; these are not Agent routes. `timezone` now comes from the singleton settings' IANA timezone; when no settings row exists, `readSettings` returns a virtual UTC/auto/zh-CN/metric default (version 1, epoch audit times). UTC fallback does not prove the user confirmed that timezone. The shared metadata schema still permits null for compatibility. The current default does not replace each historical workout's timezone/localDate, and changing settings does not rewrite history. Omitted stats/history date ranges still use UTC calendar defaults, not this setting. `authentication` is `access` or explicit local `local_mock`.
+`apiVersion`, `schemaVersion`, `definitionsVersion` are strings `1`. `milestone=M1` is a legacy compatibility marker, not current implementation or acceptance status; ordinary read-only Agent capabilities are `metadata`, `openapi`, `exercises`, `workouts`, `stats`; authorized import identities additionally advertise `exercises:create` and `workouts:create`. Human metadata additionally advertises `settings` and `export`; these are not Agent routes. `timezone` now comes from the singleton settings' IANA timezone; when no settings row exists, `readSettings` returns a virtual UTC/auto/zh-CN/metric default (version 1, epoch audit times). UTC fallback does not prove the user confirmed that timezone. The shared metadata schema still permits null for compatibility. The current default does not replace each historical workout's timezone/localDate, and changing settings does not rewrite history. Omitted stats/history date ranges still use UTC calendar defaults, not this setting. `authentication` is `access` or explicit local `local_mock`.
 
 `units`: load `kg`, storageLoad `g`, distance `m`, duration `s`, heartRate `bpm`. Storage grams are not the API load unit. `dateBasis=workout_local_date`, `rangeSemantics=[from,to)`, `weekStartsOn=monday`, `warmupDefault=exclude`.
 
@@ -90,8 +90,8 @@ Quality validSamples = completed records; missing keys `distance`, `heartRate`, 
 
 本次独立复评追加修复（设计 1.6）：新写入继续使用严格安全范围，历史详情/列表/动作/JSON backup 使用兼容旧 finite 非负范围的 read schema（正整数保持 MAX_SAFE_INTEGER），不再将新写上限施加于已有记录。旧 distance=100000001 详情及完整导出 200，前端共用 toInput 可保留旧值供用户修正，修正 PUT 后统计 200。TS backup 与 Python restore 均保留旧 duration=31536001、次数及倍率，不重写快照。统计只检查实际选中操作数；run 超界不阻断 cycle/strength，未完成明细和默认排除热身不参与检查。summary 不计算配速，因此极小正距离本身不构成 summary 错误。受控 422 仍用于真正选中超界计算，绝不静默丢弃。
 
-## 受控导入增量（1.8）
+## 受控导入增量（1.8 / 2.0）
 
-单 AUD 保持；默认 service 只读，精确 ACCESS_IMPORT_TOKEN_IDS 授权的已验 service 增加 metadata capability `workouts:create`，仅 POST `/api/agent/v1/workouts`。总体 ACCESS_SERVICE_TOKEN_IDS 仍先检查。空/非法导入配置 fail closed，未配置不授权。human 管理入口不接受任何 service；所有 Agent PUT/PATCH/DELETE、POST exercises/settings/export/未知路径拒绝。读取命令仍为严格 GET 白名单。OpenAPI 允许文档出现条件 POST /workouts，绝不执行文档中的任意 URL。未发布线上。
+单 AUD 保持；默认 service 只读，精确 ACCESS_IMPORT_TOKEN_IDS 授权的已验 service 增加 metadata capabilities `exercises:create` 与 `workouts:create`，仅 POST `/api/agent/v1/exercises` 与 `/api/agent/v1/workouts`。总体 ACCESS_SERVICE_TOKEN_IDS 仍先检查。空/非法导入配置 fail closed，未配置不授权。human 管理入口不接受任何 service；所有 Agent PUT/PATCH/DELETE、POST settings/export/未知路径拒绝。读取命令仍为严格 GET 白名单。OpenAPI 允许文档出现条件 POST /workouts 与 /exercises，绝不执行文档中的任意 URL。
 
-缺失动作先列待审批表（原名称、拟定语义、单位、原因），用户确认后由 human 建立，再替换真实 exerciseId 重新计划；不开放 Agent 动作创建，不修改归档历史。
+缺失动作在批量 JSON `exercises` 列表中声明（客户端选定稳定 UUID + 完整 ExerciseInput，语义字段同动作读取契约），计划阶段列出待审批表；用户确认计划后由导入身份先创建动作、再创建训练。Agent 创建固定非内置、未归档；同名动作、指定 UUID 冲突、同 key 异正文 409；动作创建失败即停止导入且后续训练 not_attempted。Agent 不修改、归档或删除动作，不更新/删除历史训练。

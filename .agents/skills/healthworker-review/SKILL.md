@@ -1,6 +1,6 @@
 ---
 name: healthworker-review
-description: 对 HealthWorker 仓库做深度代码审查（功能正确性、实现缺陷、健壮性、可维护性），产出可复评的审查报告；复评时逐条核对既有发现是否真的修好、有没有引入新问题。当用户说“review/审查/检查一下这个仓库的代码”“看看有没有 bug 或实现缺陷”“这块健壮吗、好维护吗”“复评上一次的发现”“按设计文档核对实现”，或在合并、交付、部署前要求把关时使用。只适用于本仓库：源码在 src/，产品与验收基线是 docs/design.md，历史轮次在 docs/reviews/。
+description: 对 HealthWorker 仓库做深度代码审查（功能正确性、实现缺陷、健壮性、可维护性、架构与数据安全设计），产出可复评的审查报告；复评时逐条核对既有发现是否真的修好、有没有引入新问题。当用户说“review/审查/检查一下这个仓库的代码”“看看有没有 bug 或实现缺陷”“这块健壮吗、好维护吗”“架构/并发/一致性/数据安全设计合不合理”“复评上一次的发现”“按设计文档核对实现”，或在合并、交付、部署前要求把关时使用。只适用于本仓库：源码在 src/，产品与验收基线是 docs/design.md，历史轮次在 docs/reviews/。
 ---
 
 # HealthWorker 深度代码审查
@@ -37,6 +37,7 @@ git ls-files | wc -l
 再按层过检查清单：
 
 - 契约、数据模型、迁移、统计口径 → `references/playbook-contracts.md`
+- 架构边界、一致性、写路径并发原语、约束分层、架构漂移 → `references/playbook-architecture.md`
 - 前端、状态、草稿、可访问性、响应式 → `references/playbook-web.md`
 - 健壮性、可维护性、测试覆盖空洞 → `references/playbook-robustness.md`
 
@@ -112,12 +113,13 @@ ID: HW-2026-09-14-01
 
 ## 参考文件
 
-| 文件                                | 何时读                                      |
-| ----------------------------------- | ------------------------------------------- |
-| `references/playbook-contracts.md`  | 第 2 步：契约、数据模型、迁移、统计口径     |
-| `references/playbook-web.md`        | 第 2 步：前端、草稿、可访问性、响应式、图表 |
-| `references/playbook-robustness.md` | 第 2 步：健壮性、可维护性、测试覆盖空洞     |
-| `references/known-gaps.md`          | 第 1 步先读：不得重复上报的清单与历史台账   |
-| `references/report-template.md`     | 第 4 步：报告结构                           |
-| `scripts/verify-baseline.sh`        | 第 2、5 步：验证记录                        |
-| `assets/repro.integration.test.ts`  | 第 3 步：临时复现模板                       |
+| 文件                                  | 何时读                                            |
+| ------------------------------------- | ------------------------------------------------- |
+| `references/playbook-contracts.md`    | 第 2 步：契约、数据模型、迁移、统计口径           |
+| `references/playbook-architecture.md` | 第 2 步：架构边界、一致性、并发控制、数据安全设计 |
+| `references/playbook-web.md`          | 第 2 步：前端、草稿、可访问性、响应式、图表       |
+| `references/playbook-robustness.md`   | 第 2 步：健壮性、可维护性、测试覆盖空洞           |
+| `references/known-gaps.md`            | 第 1 步先读：不得重复上报的清单与历史台账         |
+| `references/report-template.md`       | 第 4 步：报告结构                                 |
+| `scripts/verify-baseline.sh`          | 第 2、5 步：验证记录                              |
+| `assets/repro.integration.test.ts`    | 第 3 步：临时复现模板                             |

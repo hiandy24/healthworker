@@ -51,6 +51,15 @@ export const exerciseInputSchema = exerciseReadSchema.safeExtend({
     .max(NUMERIC_LIMITS.volumeMultiplier)
     .nullable(),
 });
+export const agentExerciseCreateSchema = exerciseInputSchema.extend({
+  id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      'Optional client-chosen stable id so batch imports can reference the exercise before it exists',
+    ),
+});
 export const exerciseSchema = exerciseReadSchema.safeExtend({
   id: z.string().uuid(),
   isBuiltin: z.boolean(),
@@ -90,5 +99,6 @@ export const exerciseListSchema = z.object({
 });
 export type Exercise = z.infer<typeof exerciseSchema>;
 export type ExerciseInput = z.infer<typeof exerciseInputSchema>;
+export type AgentExerciseCreate = z.infer<typeof agentExerciseCreateSchema>;
 export type ExercisePatch = z.infer<typeof exercisePatchSchema>;
 export type ExerciseQuery = z.infer<typeof exerciseQuerySchema>;
