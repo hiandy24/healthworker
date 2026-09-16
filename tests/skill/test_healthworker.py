@@ -10,6 +10,7 @@ import ssl
 import threading
 import tempfile
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +19,10 @@ SCRIPT = Path(__file__).resolve().parents[2] / 'skills/healthworker/scripts/heal
 spec = importlib.util.spec_from_file_location('healthworker', SCRIPT)
 hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
+# All tests, including import tests sharing hw, use an isolated missing default.
+_TEST_CONFIG_ROOT = tempfile.TemporaryDirectory()
+_REAL_DEFAULT_CONFIG = hw.DEFAULT_CONFIG
+hw.DEFAULT_CONFIG = Path(_TEST_CONFIG_ROOT.name) / 'client.local.json'
 ID = '11111111-1111-4111-8111-111111111111'
 ENV = {'HEALTHWORKER_BASE_URL': 'https://synthetic.invalid',
        'HEALTHWORKER_ACCESS_CLIENT_ID': 'synthetic-client-id',
@@ -428,6 +433,100 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn(self.config['clientId'], out)
         self.assertIn('[REDACTED]', out)
 
+    def test_json_secret_default_path_and_redaction(self):
+        self.write_config({**self.config, 'clientSecret': 'synthetic-json-secret'})
+        self.path.parent.chmod(0o755)
+        value = metadata(); value['meta']['requestId'] = 'synthetic-json-secret'
+        with patch.object(hw, 'DEFAULT_CONFIG', self.path), patch.object(hw.os, 'environ', {}):
+            fake = Fake(response(value))
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = hw.main(['metadata'], transport=fake)
+            self.assertEqual((code, err.getvalue()), (0, ''))
+            self.assertEqual(fake.calls[0][1]['CF-Access-Client-Secret'], 'synthetic-json-secret')
+            self.assertNotIn('synthetic-json-secret', out.getvalue())
+            self.assertIn('[REDACTED]', out.getvalue())
+        self.assertEqual(_REAL_DEFAULT_CONFIG, SCRIPT.resolve().parents[1] / 'client.local.json')
+
+    def test_json_secret_env_overrides_and_empty_rejected(self):
+        self.write_config({**self.config, 'clientSecret': 'synthetic-json-secret'})
+        client = hw.Client(self.env, transport=Fake())
+        self.assertEqual(client.headers['CF-Access-Client-Secret'], ENV['HEALTHWORKER_ACCESS_CLIENT_SECRET'])
+        for name in ('HEALTHWORKER_ACCESS_CLIENT_SECRET', 'HEALTHWORKER_ACCESS_CLIENT_ID', 'HEALTHWORKER_BASE_URL'):
+            self.assertEqual(self.run_cli(['metadata'], {**self.env, name: ''})[0], 2)
+        for value in (None, 12, '', 'bad secret', 'nonascii密钥', 'x' * 8193):
+            self.write_config({**self.config, 'clientSecret': value})
+            self.assertEqual(self.run_cli(['metadata'])[0], 2)
+
+    def test_default_missing_fallback_explicit_replacement_and_fail_closed(self):
+        with patch.object(hw, 'DEFAULT_CONFIG', self.path.parent / 'absent.json'):
+            self.assertEqual(hw.load_config(ENV), ENV)
+            self.assertEqual(hw.load_config({}), {})
+        with patch.object(hw, 'DEFAULT_CONFIG', self.path):
+            self.path.chmod(0o644)
+            self.assertEqual(self.run_cli(['metadata'], ENV)[0], 2)
+            other = self.path.parent / 'other.json'
+            other.write_text(json.dumps(self.config)); other.chmod(0o600)
+            self.assertEqual(hw.Client({**ENV, 'HEALTHWORKER_CONFIG': str(other)}, transport=Fake()).base, ENV['HEALTHWORKER_BASE_URL'])
+        self.path.chmod(0o600)
+        self.path.write_text('{}')
+        self.assertEqual(self.run_cli(['metadata'])[0], 2)
+        self.path.write_text('{"clientSecret":"synthetic-a","clientSecret":"synthetic-b"}')
+        self.assertEqual(self.run_cli(['metadata'])[0], 2)
+
+    def test_owner_default_symlink_and_nonregular_rejected(self):
+        with patch.object(hw.os, 'getuid', return_value=hw.os.getuid() + 1):
+            self.assertEqual(self.run_cli(['metadata'])[0], 2)
+        link = self.path.parent / 'default-link.json'
+        link.symlink_to(self.path)
+        with patch.object(hw, 'DEFAULT_CONFIG', link):
+            self.assertEqual(self.run_cli(['metadata'], ENV)[0], 2)
+            self.path.unlink()
+            self.assertEqual(self.run_cli(['metadata'], ENV)[0], 2)
+        self.path.mkdir(mode=0o700)
+        self.assertEqual(self.run_cli(['metadata'])[0], 2)
+
+    def test_json_secret_api_echo_cannot_be_saved_in_plan(self):
+        secret = 'synthetic-plan-secret'
+        self.write_config({**self.config, 'clientSecret': secret})
+        source = self.path.parent / 'batch.json'; plan = self.path.parent / 'plan.json'
+        source.write_text(json.dumps({'version': 1, 'batchId': ID, 'workouts': [{'sourceId': 'row', 'body': {'startedAt': '2026-08-01T00:00:00Z', 'timezone': 'UTC', 'status': 'draft', 'durationSeconds': None, 'notes': None, 'entries': []}}]}))
+        value = metadata(); value['data']['capabilities'].append('workouts:create')
+        client = hw.Client({'HEALTHWORKER_CONFIG': str(self.path)}, transport=Fake(response(value)))
+        def pages(path, *args):
+            return {'data': [] if path == 'exercises' else [{'id': secret}], 'meta': {'truncated': False}}
+        # Inject a response at the save boundary to exercise defense beyond API validation.
+        with patch.object(hw, 'Client', return_value=client), patch.object(client, 'pages', side_effect=pages):
+            code, out, err, _ = self.run_cli(['plan', '--input', str(source), '--plan', str(plan)], {'HEALTHWORKER_CONFIG': str(self.path)})
+        self.assertEqual((code, out), (2, ''))
+        self.assertNotIn(secret, err)
+        self.assertFalse(plan.exists())
+
+    def test_snapshot_and_help_never_reload_credentials(self):
+        resolved = hw.load_config(self.env)
+        with patch.object(hw.os, 'open', side_effect=AssertionError('must not read')):
+            self.assertIs(hw.load_config(resolved), resolved)
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                hw.main(['--help'], self.env)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+    def test_json_secret_input_rejected_before_plan_or_import(self):
+        secret = 'synthetic-json-only-secret'
+        self.write_config({**self.config, 'clientSecret': secret})
+        source = self.path.parent / 'batch.json'
+        source.write_text(json.dumps({'notes': secret}))
+        plan = self.path.parent / 'plan.json'
+        value = metadata(); value['data']['capabilities'].append('workouts:create')
+        for command in ('plan', 'import'):
+            args = [command, '--input', str(source), '--plan', str(plan)]
+            if command == 'import': args += ['--confirm', 'synthetic']
+            code, out, err, calls = self.run_cli(args, {'HEALTHWORKER_CONFIG': str(self.path)}, Fake(response(value)))
+            self.assertEqual((code, out, len(calls)), (2, '', 1))
+            self.assertNotIn(secret, err)
+            self.assertFalse(plan.exists())
+            self.assertFalse(Path(str(plan) + '.journal.json').exists())
+
     def test_environment_priority_and_same_origin_normalization(self):
         env = {**self.env, 'HEALTHWORKER_BASE_URL': 'https://SYNTHETIC.invalid:443/', 'HEALTHWORKER_ACCESS_CLIENT_ID': 'synthetic-override'}
         client = hw.Client(env, transport=Fake())
@@ -449,7 +548,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIn('never in chat', err)
 
     def test_unknown_secret_keys_and_malformed_json_rejected(self):
-        for value in ([], {}, {**self.config, 'secret': 'synthetic-only'}, {**self.config, 'clientSecret': 'synthetic-only'}, {**self.config, 'HEALTHWORKER_ACCESS_CLIENT_SECRET': 'synthetic-only'}, {**self.config, 'extra': True}, {**self.config, 'clientId': 42}):
+        for value in ([], {}, {**self.config, 'secret': 'synthetic-only'}, {**self.config, 'clientSecret': ''}, {**self.config, 'HEALTHWORKER_ACCESS_CLIENT_SECRET': 'synthetic-only'}, {**self.config, 'extra': True}, {**self.config, 'clientId': 42}):
             self.write_config(value)
             code, out, _, calls = self.run_cli(['metadata'])
             self.assertEqual((code, out, calls), (2, '', []))
@@ -468,7 +567,7 @@ class ConfigTests(unittest.TestCase):
             self.path.chmod(mode)
             self.assertEqual(self.run_cli(['metadata'])[0], 2)
         self.path.chmod(0o600)
-        self.path.parent.chmod(0o755)
+        self.path.parent.chmod(0o775)
         self.assertEqual(self.run_cli(['metadata'])[0], 2)
         self.path.parent.chmod(0o700)
         link = self.path.parent / 'link.json'; link.symlink_to(self.path)

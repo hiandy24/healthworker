@@ -169,6 +169,16 @@ def fields(value, specification):
         require(key in value and type(value[key]) in expected)
 
 
+def validate_exercise(row):
+    fields(row, {'id': (str,), 'name': (str,), 'kind': (str,), 'measurementMode': (str,),
+                 'resistanceMode': (str, type(None)), 'loadConvention': (str,), 'repConvention': (str,),
+                 'volumeMultiplier': (int, float, type(None)), 'aliases': (list,), 'muscleGroups': (list,),
+                 'equipment': (str, type(None)), 'cardioCategory': (str, type(None)),
+                 'isBuiltin': (bool,), 'archivedAt': (str, type(None)), 'createdAt': (str,), 'updatedAt': (str,), 'version': (int,)})
+    uuid_value(row['id'])
+    require(row['kind'] in ('strength', 'cardio'))
+
+
 def validate_response(path, value):
     """Validate envelopes and endpoint structures; server Zod owns business validation."""
     key = route_key(path)
@@ -178,7 +188,7 @@ def validate_response(path, value):
         require(value['servers'] == [{'url': PREFIX}])
         for route, operations in value['paths'].items():
             require(route in {'/' + p for p in PATHS - {'openapi.json'}} | {'/workouts/{id}'})
-            require(isinstance(operations, dict) and set(operations) <= ({'get', 'parameters', 'summary', 'description'} | ({'post'} if route == '/workouts' else set())))
+            require(isinstance(operations, dict) and set(operations) <= ({'get', 'parameters', 'summary', 'description'} | ({'post'} if route in ('/workouts', '/exercises') else set())))
         return
     fields(value, {'data': (list,) if key in ('exercises', 'workouts') else (dict,), 'meta': (dict,)})
     fields(value['meta'], {'requestId': (str,)})
@@ -205,14 +215,7 @@ def validate_response(path, value):
         require(meta['nextCursor'] is None or (bounded_text(meta['nextCursor'], 4000) and bool(meta['nextCursor'])))
         require(len(data) <= 100)
         for row in data:
-            if key == 'exercises':
-                fields(row, {'id': (str,), 'name': (str,), 'kind': (str,), 'measurementMode': (str,),
-                             'resistanceMode': (str, type(None)), 'loadConvention': (str,), 'repConvention': (str,),
-                             'volumeMultiplier': (int, float, type(None)), 'aliases': (list,), 'muscleGroups': (list,),
-                             'equipment': (str, type(None)), 'cardioCategory': (str, type(None)),
-                             'isBuiltin': (bool,), 'archivedAt': (str, type(None)), 'createdAt': (str,), 'updatedAt': (str,), 'version': (int,)})
-                uuid_value(row['id'])
-                require(row['kind'] in ('strength', 'cardio'))
+            if key == 'exercises': validate_exercise(row)
             else: validate_workout(row, False)
         if key == 'workouts':
             require(meta.get('dateBasis') == 'workout_local_date')
@@ -347,16 +350,30 @@ def validate_origin(base, development=False):
     return parsed.scheme, parsed.hostname, parsed.port or (80 if development else 443)
 
 
+DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / 'client.local.json'
+
+
+class ResolvedConfig(dict):
+    """Internal snapshot: resolve once per command, including output protection."""
+
+
 def load_config(env=None, development=False):
-    """Explicit private JSON only; never discover credentials or read dotenv files."""
-    resolved = dict(os.environ if env is None else env)
-    if 'HEALTHWORKER_CONFIG' not in resolved:
-        return resolved
+    """Load the Skill-local private file or explicit replacement, never dotenv."""
+    if isinstance(env, ResolvedConfig):
+        return env
+    resolved = ResolvedConfig(os.environ if env is None else env)
+    explicit = 'HEALTHWORKER_CONFIG' in resolved
     try:
-        path = Path(resolved['HEALTHWORKER_CONFIG'])
+        path = Path(resolved['HEALTHWORKER_CONFIG']) if explicit else DEFAULT_CONFIG
+        if not explicit:
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                return resolved
         if not path.is_absolute() or path.is_symlink(): raise ValueError()
         parent = path.parent.stat()
-        if os.name == 'posix' and (stat.S_IMODE(parent.st_mode) != 0o700 or parent.st_uid != os.getuid()): raise ValueError()
+        # The shared Skill directory may be readable/traversable, never writable by others.
+        if os.name == 'posix' and (stat.S_IMODE(parent.st_mode) & 0o022 or parent.st_uid != os.getuid()): raise ValueError()
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, 'O_NOFOLLOW', 0))
         with os.fdopen(fd, 'rb') as source:
             info = os.fstat(source.fileno())
@@ -365,16 +382,21 @@ def load_config(env=None, development=False):
             raw = source.read(16385)
         if len(raw) > 16384: raise ValueError()
         config = json.loads(raw, parse_constant=reject_constant, object_pairs_hook=unique_object)
-        if type(config) is not dict or set(config) != {'baseUrl', 'clientId'}: raise ValueError()
-        if not isinstance(config['clientId'], str) or not config['clientId'] or not bounded_text(config['clientId'], 8192) or not config['clientId'].isascii() or any(c.isspace() for c in config['clientId']): raise ValueError()
+        if type(config) is not dict or not {'baseUrl', 'clientId'} <= set(config) <= {'baseUrl', 'clientId', 'clientSecret'}: raise ValueError()
+        for name in ('clientId', 'clientSecret'):
+            if name in config:
+                value = config[name]
+                if not isinstance(value, str) or not value or not bounded_text(value, 8192) or not value.isascii() or any(c.isspace() for c in value): raise ValueError()
     except (OSError, ValueError, TypeError, RecursionError):
-        raise ClientError('CONFIGURATION', 'HEALTHWORKER_CONFIG must name an absolute private JSON file (0600, parent 0700, current owner) containing only baseUrl and clientId; secrets and unknown fields are forbidden.', 2) from None
+        raise ClientError('CONFIGURATION', 'Config must be an absolute private JSON file (0600, current owner; parent current-owned and not group/world writable), with baseUrl/clientId and optional clientSecret only.', 2) from None
     configured_origin = validate_origin(config['baseUrl'])
     base = resolved.get('HEALTHWORKER_BASE_URL', config['baseUrl'])
     if validate_origin(base, development) != configured_origin:
-        raise ClientError('CONFIGURATION', 'Environment origin differs from the private config binding. Stop and verify the destination; explicitly select a matching config or unset HEALTHWORKER_CONFIG and configure the intended environment securely.', 2)
+        raise ClientError('CONFIGURATION', 'Environment origin differs from the private config binding. Stop and verify the destination; explicitly select a matching private config for the verified destination.', 2)
     resolved.setdefault('HEALTHWORKER_BASE_URL', config['baseUrl'])
     resolved.setdefault('HEALTHWORKER_ACCESS_CLIENT_ID', config['clientId'])
+    if 'clientSecret' in config:
+        resolved.setdefault('HEALTHWORKER_ACCESS_CLIENT_SECRET', config['clientSecret'])
     return resolved
 
 
@@ -390,7 +412,7 @@ class Client:
             for variable, header in [('HEALTHWORKER_ACCESS_CLIENT_ID', 'CF-Access-Client-Id'), ('HEALTHWORKER_ACCESS_CLIENT_SECRET', 'CF-Access-Client-Secret')]:
                 credential = env.get(variable, '')
                 if not credential or not bounded_text(credential, 8192) or not credential.isascii() or any(c.isspace() for c in credential):
-                    raise ClientError('CONFIGURATION', 'Missing or invalid ' + variable + '. Supply it privately through the process environment or secret manager, never in chat; Client Secret is not read from JSON.', 2)
+                    raise ClientError('CONFIGURATION', 'Missing or invalid ' + variable + '. Supply it privately through the private JSON, process environment or secret manager, never in chat.', 2)
                 self.headers[header] = credential
         # Development deliberately never sends credentials, even if inherited.
         self.transport, self.sleep = transport or Transport(), sleep
@@ -402,6 +424,14 @@ class Client:
         if len(encoded) > 512 * 1024:
             raise ClientError('INVALID_ARGUMENT', 'Workout exceeds 512 KiB.', 2)
         return self._request('workouts', {}, encoded, key)
+
+    def create_exercise(self, body, key):
+        if not isinstance(key, str) or not re.fullmatch(r'[!-~]{1,200}', key):
+            raise ClientError('INVALID_ARGUMENT', 'Invalid idempotency key.', 2)
+        encoded = json.dumps(body, ensure_ascii=True, allow_nan=False, separators=(',', ':')).encode()
+        if len(encoded) > 512 * 1024:
+            raise ClientError('INVALID_ARGUMENT', 'Exercise exceeds 512 KiB.', 2)
+        return self._request('exercises', {}, encoded, key)
 
     def get(self, path, query=None):
         return self._request(path, query)
@@ -449,8 +479,9 @@ class Client:
                 json_tree(value)
                 if body_bytes is not None:
                     fields(value, {'data': (dict,), 'meta': (dict,)})
-                    validate_workout(value['data'], True)
                     fields(value['meta'], {'requestId': (str,), 'replayed': (bool,)})
+                    if path == 'exercises': validate_exercise(value['data'])
+                    else: validate_workout(value['data'], True)
                 else:
                     validate_response(path, value)
                 if path.startswith('stats/'):
