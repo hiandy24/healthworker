@@ -101,6 +101,7 @@ export const metadataSchema = z
           'stats',
           'settings',
           'export',
+          'exercises:create',
           'workouts:create',
         ]),
       ),
