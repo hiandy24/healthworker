@@ -1,14 +1,25 @@
 # 本地环境、恢复与生产部署
 
-## 只读 MCP 服务器部署实测（2026-09-16 UTC）
+## MCP 当前状态：9 工具与 ChatGPT 网页端使用（2026-10-24 更新）
+
+用户确认 `healthworker-mcp` 已在 ChatGPT 网页端实际使用（2026-10-24）。当前部署与设计 2.2 / §9.6.1 一致：7 个只读工具 + 2 个 create-only 工具（`create_workout`、`create_exercise`），共 9 个；无更新/删除/归档/设置/导出/数据库管理工具，训练备注永不返回。
+
+- 2026-10-24 通过 MCP 只读工具线上核验：`initialize` 成功，`tools/list` 返回 9 工具；`get_metadata` 返回 `authentication=access`、`timezone=Asia/Shanghai`、capabilities 含 `exercises:create`/`workouts:create`；训练列表与总览统计读取正常。个人训练明细不写入公共文档。
+- 2026-10-24 自动测试：typecheck、lint、format:check、unit **55**、MCP **22**、integration **55**、Python **47** 通过；`build` 未在本轮重跑。
+- 2.2 的 create 工具随 9 工具版本上线；此前的在线验证覆盖 `create_workout` 创建、相同内容幂等重放、列表可见，以及草稿不计入完成统计。当前生产无草稿。
+- 上游权限仍是导入白名单身份。路径令牌是唯一准入：在当前导入 Token 配置下，持有 URL 即可调用全部 9 个工具（含 create-only），但 Agent API 仍拒绝更新/删除/归档/管理；因此 URL 必须按凭证保管，泄露时轮换 `MCP_PATH_TOKEN` 并重建连接器。
+- 仅分析场景可将上游凭据换成只读 Service Token；需要 create 时必须保留精确导入 Token。两种情况下都不应授予更宽权限。
+- 历史 2.1 只读 7 工具部署见下节；其中“真实 ChatGPT 连接器待人工验收”已由本次用户实测取代。
+
+## 只读 MCP 首次部署（2026-09-16 UTC，历史）
 
 用户授权后，已按设计 2.1（§9.6）部署独立 Worker `healthworker-mcp`（MCP Streamable HTTP 无状态只读子集，7 个只读工具映射现有 Agent API GET；主 Worker 与 Access 边界不变）。实现、测试与独立 review（0 阻塞，5 条 P3 已修复）见 [docs/reviews/2026-09-16-mcp-worker-review.md](reviews/2026-09-16-mcp-worker-review.md)。
 
 - 全量验证通过：typecheck、lint、format:check、build、TS 单元 **12 files / 55 passed**（含官方 `@modelcontextprotocol/sdk` 客户端经真实 TCP 的兼容性测试）、MCP 池 **2 files / 18 passed**、集成 **6 files / 55 passed**、Python **47 tests / OK**。
 - 部署：workers.dev 直连（`https://healthworker-mcp.<subdomain>.workers.dev`），三个 Secret（上游 Access 凭据 ×2 + 路径令牌）经受保护文件 stdin 写入，不在命令行明文出现。期间发现并修复一个线上缺陷：workerd 不支持 `redirect: 'error'`，改为 `redirect: 'manual'` + 显式拒绝 3xx（凭据绝不跟随重定向），并以永久测试钉住。
-- 线上 6 步端到端验证通过：initialize、tools/list（7 工具）、get_metadata（`authentication=access`、3 次训练）、search_exercises（中文查询）、get_strength_stats（宽距高位下拉 21 组/69 kg/8728 容量）、get_summary_stats（3 次完成）。
-- 已知边界：workers.dev 边缘与主域同样按 User-Agent 拦截部分自动化请求（`error code: 1010`），手写验证脚本须带自定义 UA；**真实 ChatGPT 连接器端到端属用户侧人工验收**（A22），本部署不等于该验收完成。
-- 建议后续将 MCP Worker 的上游凭据更换为未加入导入白名单的只读 Service Token（轮换两个 Secret 即可）。
+- 当时线上 6 步端到端验证通过：initialize、tools/list（7 工具）、get_metadata（`authentication=access`、3 次训练）、search_exercises（中文查询）、get_strength_stats（宽距高位下拉 21 组/69 kg/8728 容量）、get_summary_stats（3 次完成）。
+- 已知边界：workers.dev 边缘与主域同样按 User-Agent 拦截部分自动化请求（`error code: 1010`），手写验证脚本须带自定义 UA；当时真实 ChatGPT 连接器端到端属用户侧人工验收（A22）；该验收已于 2026-10-24 由用户完成，见上节。
+- 仅分析场景可将 MCP Worker 的上游凭据更换为未加入导入白名单的只读 Service Token；启用 2.2 create 工具时不要这样做，应保留精确导入 Token。
 
 ## 保存后离开弹窗修复更新实测（2026-09-16 UTC）
 

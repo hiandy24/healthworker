@@ -1,5 +1,7 @@
 # healthworker-mcp 只读 MCP Worker 代码审查记录（2026-09-16）
 
+> 后续状态（2026-10-24）：MCP 已部署 9 工具（7 只读 + 2 create-only），用户已在 ChatGPT 网页端实际使用。本报告是 2026-09-16 对 2.1 只读 7 工具版本的审查记录，不代表当前工具面。
+
 本轮范围：指定变更——新增独立 Worker `healthworker-mcp`（`mcp/` 目录）、`tests/mcp/`、`tests/unit/mcp-sdk-client.test.ts`、`vitest.mcp.config.ts`、`package.json`/`tsconfig.json` 配套与 `docs/design.md` 2.1/§9.6。对应 `docs/design.md` §9.6（2.1 变更记录）。
 证据口径：L1 实测复现（临时探针测试，跑在 workerd 池）/ L2 静态确证（唯一调用链，标"未运行"）；未运行项在第 7 节单列。
 工作区基线：`git status --porcelain | wc -l = 37`、`git ls-files | wc -l = 100`（基线提交 `cf620e4`，MCP 全部变更为未提交工作树）。收尾回到 37；本报告文件是审查产出的唯一新增文件（收尾后为 38）。

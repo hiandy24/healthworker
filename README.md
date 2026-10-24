@@ -1,15 +1,16 @@
 # HealthWorker
 
-基于 Cloudflare Workers 与 D1 的个人训练记录系统。实施基线见 [完整设计 1.9](docs/design.md) 和 [执行规则](AGENTS.md)。
+基于 Cloudflare Workers 与 D1 的个人训练记录系统。实施基线见 [完整设计 2.2](docs/design.md) 和 [执行规则](AGENTS.md)。
 
-## 当前状态：M2–M4 本地实现，验收未全部完成
+## 当前状态：M2–M4 已上线，M5 部分完成
 
 - M1：React/Mantine/Hono/本地 D1 骨架、Access JWT 单应用/单 audience 与已验身份分类、人类 allowlist、同源写入及安全限制。
 - M2：动作库、混合训练 CRUD、历史/详情/复制、D1 原子保存、幂等与 If-Match 并发保护；本地草稿独立 UUID，每个 document 独立存储 key，显式恢复复制不删除源草稿；提交不确定时重放原正文/key，不重复创建。
 - M3：summary/strength/cardio 共享统计服务，总览与 Recharts 趋势、范围/质量信息/明细表。缺失不当零，容量按单动作快照，配速按同项目/同 basis 总量比。
 - M4：设置及首次时区确认、JSON/CSV 附件导出、新本地 SQLite 恢复脚本、默认只读、授权后受控创建的 Agent CLI/Skill。
+- MCP（2.1/2.2）：独立 `healthworker-mcp`，9 工具（7 只读 + 2 create-only）；用户已在 ChatGPT 网页端实际使用（2026-10-24）。
 
-**已首次生产部署至 <https://health.tokenflare.top>（2026-09-14 UTC）；M5 部分完成。** 独立生产 D1 已应用两份既有迁移，仅初始化 3 条内置动作，训练为 0。公共 DNS/TLS 可用，无凭证页面、人类/Agent/未知 API 均真实返回 Access 302；远端 workers.dev / preview 已关闭。OTP 登录和 Service Token 身份隔离、完整 GUI/真机仍待验收。 本地 mock、独立代码 review 与自动测试不是真实 Access、全 GUI 或真机验收。metadata 的旧 milestone=M1 仅保留兼容；实际能力以 capabilities 为准，不代表阶段验收完成。独立 review 与修复证据见 [M2](docs/reviews/m2.md)、[M3](docs/reviews/m3.md)、[M4](docs/reviews/m4.md)。
+**已首次生产部署至 <https://health.tokenflare.top>（2026-09-14 UTC）；M5 部分完成。** 独立生产 D1 已应用 0000–0002 迁移；首次部署时仅初始化 3 条内置动作、训练为 0，当前生产数据已可经网页端与 MCP 正常读取（个人训练明细不写入公共文档）。公共 DNS/TLS 可用，无凭证页面、人类/Agent/未知 API 均真实返回 Access 302；远端 workers.dev / preview 已关闭。ChatGPT 网页端 MCP 使用已由用户实测（2026-10-24）；OTP 登录和 Service Token 身份隔离、完整 GUI/真机、p95 性能仍待验收。 本地 mock、独立代码 review 与自动测试不是真实 Access、全 GUI 或真机验收。metadata 的旧 milestone=M1 仅保留兼容；实际能力以 capabilities 为准，不代表阶段验收完成。独立 review 与修复证据见 [M2](docs/reviews/m2.md)、[M3](docs/reviews/m3.md)、[M4](docs/reviews/m4.md)。
 
 ## 单 Access 应用 / 单 AUD（设计 1.8）
 
@@ -46,6 +47,8 @@ npx pnpm@10.34.5 build
 git diff --check
 ```
 
+2026-10-24 实跑：typecheck、lint、format:check、unit **55**、MCP **22**、integration **55**、Python **47** 全部通过；`build` 未在本轮重跑。
+
 历史确认项修复后，typecheck、lint、format/format:check、build、50 个 TS 单元/组件测试、55 个 workerd/D1 集成测试、27 个 Python Skill unittest 全部通过。新增真实客户端 InfiniteQueryObserver→workerd UTC 午夜分页、数值边界/历史坏值/累计倍率、动作状态码/OpenAPI、恢复日期矩阵回归；不代表 GUI 或真实 Access 验收。该历史轮 Git 文件均未跟踪，git diff --check 覆盖有限；没有修改 SQL 迁移。当前首次基线收尾结果见下文。
 
 当前脚本还包括 db:generate、format；schema 变更须追加迁移，不改已应用迁移。没有 test:e2e、deploy 或 db:migrate:remote 脚本，不把目标脚本当作已提供能力。本轮未重跑开发库迁移/seed，沿用 M1 的历史本地记录；隔离集成测试已执行迁移；新增临时 SQLite 全迁移/触发器校验与临时目录 drizzle-kit generate 无变更回归。已有 SQL 未改，仅补齐 0001 journal/snapshot。
@@ -79,7 +82,7 @@ HEALTHWORKER_BASE_URL=http://127.0.0.1:5173 \
 - 旧版首页曾检查 360/390/1024/1440 宽度；不能替代 M2–M4 新版多视口回归。
 - Playwright click 持续 timeout，domSnapshot 间歇为空，截图再次报 `browser screenshot activity capture failed for guest`。上述部分可见结果不代表所有点击流程成功。
 - **未完成**训练录入/保存闭环、主题、新版完整多视口、附件下载、键盘、200% 缩放、加载/失败等完整状态与真机验证。需用户协助恢复浏览器能力或人工验收，不声明 GUI 全通过。
-- 生产入口无凭证 Access 拦截已实测；OTP/Service Token 登录后的单 AUD 身份隔离仍待真实边缘确认，完整 GUI 与真机也待验收。私有配置已另存且忽略，公共文档不列邮箱、AUD 或凭证。
+- 生产入口无凭证 Access 拦截已实测；ChatGPT 网页端 MCP 插件已由用户实测可用（2026-10-24），但这不等同于 HealthWorker 自身 GUI、真机或 OTP 验收。OTP/Service Token 登录后的单 AUD 身份隔离仍待真实边缘确认，完整 GUI 与真机也待验收。私有配置已另存且忽略，公共文档不列邮箱、AUD 或凭证。
 
 更多见 [API](docs/api.md)、[部署说明](docs/deployment.md)。未经明确授权不远端迁移、发布、提交或推送 Git。
 
@@ -100,11 +103,11 @@ HEALTHWORKER_BASE_URL=http://127.0.0.1:5173 \
 
 ## ChatGPT 接入指南（开发与排障）
 
-从 Skill 到 MCP Connector 的完整落地记录：为什么 skill 路线在网页版不可行、MCP 端的协议/认证/工具设计、对 ChatGPT 的硬性要求（SSE 响应、工具元数据、版本回显）、Cloudflare 边缘的三个拦截点与修复、三层证据排障法与凭据交付纪律。见 [docs/chatgpt-connector-guide.md](docs/chatgpt-connector-guide.md)。
+从 Skill 到 MCP Connector 的完整落地记录：为什么 skill 路线不作为网页端 plugin 入口、MCP 端的协议/认证/工具设计、对 ChatGPT 的硬性要求（SSE 响应、工具元数据、版本回显）、Cloudflare 边缘的三个拦截点与修复、三层证据排障法与凭据交付纪律。见 [docs/chatgpt-connector-guide.md](docs/chatgpt-connector-guide.md)。
 
 ## MCP 服务器（设计 2.1 / 2.2）
 
-新增独立 Worker `mcp/`（healthworker-mcp）：为 ChatGPT 等外部客户端提供 MCP Streamable HTTP 只读入口，绕开网页版 skill python 沙箱无出站网络的平台限制。9 个工具：7 个只读（metadata/动作搜索/训练列表/训练详情/三类统计）映射现有 Agent API GET，2 个 **create-only** 写入（create_workout/create_exercise，与导入白名单身份权限一致，内容哈希幂等键，ChatGPT 对写操作要求用户确认）；无更新/删除/归档/管理工具，训练备注永不返回；上游 Access 凭据与路径令牌均为 Worker Secret（命令行不明文）。准入 = 连接 URL 内嵌的不可猜测路径令牌（常量时间比较，错误一律 404）。重定向一律拒绝，凭据不外跟随。测试含官方 SDK 客户端经真实 TCP 的兼容性套件。协议细节与安全边界见 design.md §9.6；报告见 docs/reviews/2026-09-16-mcp-worker-review.md。
+新增独立 Worker `mcp/`（healthworker-mcp）：为 ChatGPT 等外部客户端提供 MCP Streamable HTTP 入口，避免把 Access 凭据放进 skill、对话或前端。9 个工具：7 个只读（metadata/动作搜索/训练列表/训练详情/三类统计）映射现有 Agent API GET，2 个 **create-only** 写入（create_workout/create_exercise，与导入白名单身份权限一致，内容哈希幂等键，ChatGPT 对写操作要求用户确认）；无更新/删除/归档/管理工具，训练备注永不返回；上游 Access 凭据与路径令牌均为 Worker Secret（命令行不明文）。准入 = 连接 URL 内嵌的不可猜测路径令牌（常量时间比较，错误一律 404）；在当前导入 Token 配置下，持有 URL 即拥有当前 9 工具面（含 create-only），必须按凭证保管。重定向一律拒绝，凭据不外跟随。测试含官方 SDK 客户端经真实 TCP 的兼容性套件。2026-10-24 用户已在 ChatGPT 网页端实际使用。协议细节与安全边界见 design.md §9.6 / §9.6.1；报告见 docs/reviews/2026-09-16-mcp-worker-review.md。
 
 ## 受控导入增量（1.8 / 2.0）
 

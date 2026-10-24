@@ -4,7 +4,9 @@
 - **日期**：2026-09-15
 - **状态**：实施基线。用户已认可总体方向，并授权整理完整方案、选择 UI 框架和建立仓库执行规则；本文细化第一版的默认实现约定。
 - **适用范围**：本仓库的前端、Worker 后端、D1 数据库、默认只读、受控创建 Agent API、Agent Skill、测试与部署。
-- **实现状态**：M2 记录 CRUD、独立 document 草稿与恢复/并发保护，M3 summary/strength/cardio 与 Recharts，M4 设置、导出、新本地 SQLite 恢复脚本与默认只读、受控创建 Skill 已实现。独立代码 review 与本地自动测试不等于完整 GUI/真实 Access 验收；2026-09-14 UTC 已首次生产部署至 https://health.tokenflare.top，独立 D1 仅三条内置动作、无训练；DNS/TLS、无凭证 Access 拦截和备用入口关闭已实测。M5 部分完成，OTP/Service Token、完整 GUI/真机验收仍待办。具体证据与阻塞见 README、docs/deployment.md、docs/reviews/m2.md、m3.md、m4.md。
+- **实现状态**：M2 记录 CRUD、独立 document 草稿与恢复/并发保护，M3 summary/strength/cardio 与 Recharts，M4 设置、导出、新本地 SQLite 恢复脚本与默认只读、受控创建 Skill 已实现。独立代码 review 与本地自动测试不等于完整 GUI/真实 Access 验收；2026-09-14 UTC 已首次生产部署至 https://health.tokenflare.top，首次部署时独立 D1 仅三条内置动作、无训练；DNS/TLS、无凭证 Access 拦截和备用入口关闭已实测。M5 部分完成，OTP/Service Token、完整 GUI/真机验收仍待办。具体证据与阻塞见 README、docs/deployment.md、docs/reviews/m2.md、m3.md、m4.md。
+
+> 2026-10-24 状态补记：`healthworker-mcp` 以 9 工具（7 只读 + 2 create-only）运行，用户已在 ChatGPT 网页端实际使用；生产数据可正常读取。真实 OTP 完整矩阵、完整 GUI/真机、p95 性能仍未验收。
 
 > 后续开发、测试和部署必须参照本文执行。一般实现细节可以在不改变约束的前提下完善；架构、数据语义、安全边界或产品范围发生实质变化时，必须先记录变更理由并更新设计。不得悄悄偏离设计，也不得通过擅自修改设计扩大权限或范围。仓库执行规则见 [AGENTS.md](../AGENTS.md)。
 
@@ -695,30 +697,30 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 
 ### 12.2 必须通过的验收用例
 
-| 编号 | 验收标准                                                                                                                                |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| A01  | 手机与桌面均可创建包含深蹲多组和跑步的混合训练，刷新后完整保留                                                                          |
-| A02  | 复制上一组/历史训练不会自动产生已完成成绩或重复训练                                                                                     |
-| A03  | 热身默认排除；次数模式、计时模式、自重、辅助和外加重量分别正确校验                                                                      |
-| A04  | 完成训练只包含完整明细，草稿不进入统计；缺失值不展示为零成绩                                                                            |
-| A05  | 100 kg × 5 次 × 3 组、倍率 1 的容量为 1,500 kg·次；双哑铃倍率用独立测试固定                                                             |
-| A06  | 自重/辅助/计时/缺失倍率组不进入容量，并返回排除计数                                                                                     |
-| A07  | 5 km/30 min 与 10 km/50 min 的聚合配速为 320 秒/km，而非两条配速的简单平均                                                              |
-| A08  | 周一边界、月边界、跨午夜和夏令时样本日期归属正确；改变默认时区不重写历史日期                                                            |
-| A09  | 连续或并发重放同一创建请求只有一条训练；同 key 不同正文返回 409                                                                         |
-| A10  | 两个客户端编辑同版本仅一个成功，另一个 412；任何 SQL 失败均不留下部分明细                                                               |
-| A11  | 并发编辑/删除检查版本；归档动作仍能展示历史但不能新增引用                                                                               |
-| A12  | 无凭证不能获取数据，伪造 Access 头无效；同 AUD 下 human/service 身份不可互换，混淆身份拒绝                                              |
-| A13  | 只读 Agent 对所有写路径均被拒绝；导入 Token 仅 POST /workouts，人类 API 不接受 Agent Token；未知 API 不返回 SPA HTML                    |
-| A14  | Access 过期/重定向、离线、500、429 均有可理解提示，录入内容不丢失                                                                       |
-| A15  | CSV 正确转义并防公式注入；JSON 全量包含归档动作、草稿及完整备注，恢复后 ID、引用、备注和统计一致                                        |
-| A16  | 360/390/768/1024/1440 px 无页面横向溢出、遮挡或不可操作按钮；关键流程支持键盘及 200% 缩放                                               |
-| A17  | 浅色/深色、焦点、错误、空状态及图表明细可读；图表不只依赖颜色或 hover                                                                   |
-| A18  | Skill 读取只使用白名单 GET；导入只使用确认后的 POST /workouts 与 POST /exercises、正确处理分页/截断/超时、拒绝跨源重定向、不输出凭证    |
-| A19  | 最大允许训练规模在 D1 运行环境完整保存/更新/删除；参数限制不导致部分提交                                                                |
-| A20  | 部署入口、日志和前端包检查通过，无 Service Token、数据库管理凭证或真实训练 seed                                                         |
-| A21  | 新增动作引用与动作归档/计量语义修改并发时符合串行结果，不写入失效快照；已归档历史条目仍可正常编辑，动作和训练各自的游标分页正确         |
-| A22  | MCP 面仅 7 个只读工具、永不返回备注；路径令牌缺失/错误 fail closed；真实 ChatGPT 连接器端到端（含网络受限沙箱不可达时）属上线后人工验收 |
+| 编号 | 验收标准                                                                                                                                                                                                                      |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A01  | 手机与桌面均可创建包含深蹲多组和跑步的混合训练，刷新后完整保留                                                                                                                                                                |
+| A02  | 复制上一组/历史训练不会自动产生已完成成绩或重复训练                                                                                                                                                                           |
+| A03  | 热身默认排除；次数模式、计时模式、自重、辅助和外加重量分别正确校验                                                                                                                                                            |
+| A04  | 完成训练只包含完整明细，草稿不进入统计；缺失值不展示为零成绩                                                                                                                                                                  |
+| A05  | 100 kg × 5 次 × 3 组、倍率 1 的容量为 1,500 kg·次；双哑铃倍率用独立测试固定                                                                                                                                                   |
+| A06  | 自重/辅助/计时/缺失倍率组不进入容量，并返回排除计数                                                                                                                                                                           |
+| A07  | 5 km/30 min 与 10 km/50 min 的聚合配速为 320 秒/km，而非两条配速的简单平均                                                                                                                                                    |
+| A08  | 周一边界、月边界、跨午夜和夏令时样本日期归属正确；改变默认时区不重写历史日期                                                                                                                                                  |
+| A09  | 连续或并发重放同一创建请求只有一条训练；同 key 不同正文返回 409                                                                                                                                                               |
+| A10  | 两个客户端编辑同版本仅一个成功，另一个 412；任何 SQL 失败均不留下部分明细                                                                                                                                                     |
+| A11  | 并发编辑/删除检查版本；归档动作仍能展示历史但不能新增引用                                                                                                                                                                     |
+| A12  | 无凭证不能获取数据，伪造 Access 头无效；同 AUD 下 human/service 身份不可互换，混淆身份拒绝                                                                                                                                    |
+| A13  | 只读 Agent 对所有写路径均被拒绝；导入 Token 仅 POST /workouts，人类 API 不接受 Agent Token；未知 API 不返回 SPA HTML                                                                                                          |
+| A14  | Access 过期/重定向、离线、500、429 均有可理解提示，录入内容不丢失                                                                                                                                                             |
+| A15  | CSV 正确转义并防公式注入；JSON 全量包含归档动作、草稿及完整备注，恢复后 ID、引用、备注和统计一致                                                                                                                              |
+| A16  | 360/390/768/1024/1440 px 无页面横向溢出、遮挡或不可操作按钮；关键流程支持键盘及 200% 缩放                                                                                                                                     |
+| A17  | 浅色/深色、焦点、错误、空状态及图表明细可读；图表不只依赖颜色或 hover                                                                                                                                                         |
+| A18  | Skill 读取只使用白名单 GET；导入只使用确认后的 POST /workouts 与 POST /exercises、正确处理分页/截断/超时、拒绝跨源重定向、不输出凭证                                                                                          |
+| A19  | 最大允许训练规模在 D1 运行环境完整保存/更新/删除；参数限制不导致部分提交                                                                                                                                                      |
+| A20  | 部署入口、日志和前端包检查通过，无 Service Token、数据库管理凭证或真实训练 seed                                                                                                                                               |
+| A21  | 新增动作引用与动作归档/计量语义修改并发时符合串行结果，不写入失效快照；已归档历史条目仍可正常编辑，动作和训练各自的游标分页正确                                                                                               |
+| A22  | MCP 面为 7 个只读 + 2 个 create-only 工具（共 9 个），永不返回备注，无更新/删除/归档/设置/导出/管理工具；路径令牌缺失/错误 fail closed；ChatGPT 网页端连接器已由用户实测可用（2026-10-24），该人工验收不替代其他 GUI/真机验收 |
 
 ### 12.3 性能目标与验证方法
 
@@ -769,9 +771,11 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 
 ### 变更记录
 
+- **2.2 文档同步 / 2026-10-24**：按线上实际状态对齐 A22 与 §9.6/§9.6.1（9 工具 = 7 只读 + 2 create-only），记录用户 ChatGPT 网页端实测；澄清普通 Chat/Work 网络边界与 MCP 凭据要求；不改变架构、权限、数据语义或统计口径。
+
 - **2.2 / 2026-09-16（MCP 新增受控创建）**：用户要求 ChatGPT 直接接管数据记录后，MCP 边车新增 create_workout / create_exercise 两个 create-only 工具（§9.6.1），复用导入白名单身份权限；内容哈希幂等键；工具标注 readOnlyHint=false 触发 ChatGPT 的写操作确认；instructions 与描述强制"先展示后确认、绝不虚构数据"；无更新/删除/归档/管理面。
 
-- **2.1 / 2026-09-16（只读 MCP 服务器）**：为让 ChatGPT 网页版跨对话分析训练数据（其 skill python 沙箱默认无出站网络），新增独立 Worker `healthworker-mcp`（§9.6）：MCP Streamable HTTP 无状态只读子集，7 个只读工具映射现有 Agent API GET；凭据（建议只读 Service Token）存 Worker Secret，连接 URL 内嵌路径令牌；不定义任何写入工具、永不传递 includeNotes；主 Worker 与 Access 边界不变，无绕过路径。新增 devDependency `@modelcontextprotocol/sdk`（仅测试用真实客户端）。
+- **2.1 / 2026-09-16（只读 MCP 服务器）**：为让 ChatGPT 网页版跨对话分析训练数据（当时普通 Chat 的 skill python 运行环境实测无出站网络；2026-10 官方文档已将 Work code/shell 网络描述为策略控制，见 §9.6），新增独立 Worker `healthworker-mcp`（§9.6）：MCP Streamable HTTP 无状态只读子集，7 个只读工具映射现有 Agent API GET；凭据（2.1 建议只读 Service Token；2.2 起 create 工具需精确导入 Token，见 §9.6）存 Worker Secret，连接 URL 内嵌路径令牌；不定义任何写入工具、永不传递 includeNotes；主 Worker 与 Access 边界不变，无绕过路径。新增 devDependency `@modelcontextprotocol/sdk`（仅测试用真实客户端）。
 - **2.0 / 2026-09-15（Agent 自动创建缺失动作）**：用户明确授权导入 Agent 自动创建缺失动作（"我很多时候都不是手填的，都需要你来帮我填写"）。§9.5 修订：导入身份增加 POST /api/agent/v1/exercises（metadata 增加 exercises:create），接受可选客户端选定稳定 UUID 供批量前向引用；创建以原子条件 batch 实现（名称条件插入 + changes()=1 才写 replay 行 + 主键冲突整体回滚），错误契约 409 IDEMPOTENCY_CONFLICT/EXERCISE_EXISTS/EXERCISE_ID_EXISTS；人类管理保留同名能力，不加 schema 唯一约束。Skill 批量 JSON 增加可选 exercises 声明，计划含 createExercises，导入先动作后训练、动作失败即停（后续训练 not_attempted）。普通 service 仍只读，Agent 仍无更新/删除/归档/管理权限。
 - **1.9 / 2026-09-15（Skill 本地 JSON 凭证）**：用户明确授权 Skill 根私有 JSON 默认加载并本地保存 Secret；环境覆盖与跨源绑定保持，文件 0600、父目录禁止他人写入但不强制共享目录 0700。仅本地配置信任边界与 A18/A20 回归变更，不改 API/schema/统计或服务端权限；不部署、不导入，仅允许 metadata GET 最小真实验证。
 
@@ -797,15 +801,15 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 
 - **1.0 / 2026-09-13**：从认可的设计草案形成实施基线；确定 Mantine UI；固定数据模型、统计口径、认证边界、Agent 契约、测试与交付要求。
 
-## 9.6 只读 MCP 边界（2.1）
+## 9.6 MCP 边界（2.1 只读面）
 
-ChatGPT 网页版 skill 的 python 沙箱默认无出站网络，CLI 方案在网页端不可行；MCP 连接由 ChatGPT 本体发起、不经沙箱，因此新增独立 Worker `healthworker-mcp` 作为 MCP 服务器。它与主 Worker 分开部署：主 Worker 的全部入口继续受 Access 保护，不新增任何绕过 Access 的路径；MCP Worker 是 Agent API 的**只读消费者**，凭据存于其 Worker Secret。
+普通 ChatGPT 网页对话不执行用户本机的 CLI；Skill 的脚本运行环境也不保证可访问自建 API。2026-10 核对 OpenAI 文档：仅提供 instructions/resources 的 Plugin 可以只有 skills，但实时数据、认证、授权与受控操作应使用 MCP server；ChatGPT Work 的 code/shell 网络由 workspace/用户策略控制，不能作为稳定的插件取数通道。MCP 连接由 ChatGPT 本体发起、不经用户 sandbox，因此新增独立 Worker `healthworker-mcp` 作为 MCP 服务器。它与主 Worker 分开部署：主 Worker 的全部入口继续受 Access 保护，不新增任何绕过 Access 的路径；MCP Worker 是 Agent API 的消费者（2.1 只读面；2.2 的 create-only 见 §9.6.1，当前部署为 9 工具），凭据存于其 Worker Secret。
 
 - **协议**：MCP Streamable HTTP 的无状态子集，手工实现且刻意保持最小——`initialize`/`notifications/initialized`/`ping`/`tools/list`/`tools/call`，客户端 Accept 含 text/event-stream 时以 SSE 流式包裹 JSON-RPC 响应（ChatGPT 连接器只解析 SSE；规范允许 JSON 或 SSE 二选一），纯 JSON 客户端路径保留；无会话、无服务端主动流（GET/DELETE 405，通知 202）。协议版本对日期形回显（向前兼容新修订），`MCP-Protocol-Version` 头宽容接受不拒 400；拒绝 JSON-RPC 批量消息。不用 Durable Objects 与协议框架依赖，以降低部署面并便于审计；`@modelcontextprotocol/sdk` 仅作为 devDependency 在测试中以真实客户端（经真实 TCP）钉住生态兼容性。
-- **准入**：连接 URL 路径内嵌不可猜测的 `MCP_PATH_TOKEN`（常量时间比较，错误 404 不区分原因；对整段大小写折叠兼容——部分连接器客户端会规范化 URL 大小写，折叠后熵仍约 168 bit）。ChatGPT 自定义连接器不支持自定义认证头，URL 即准入凭证；这是有意的现实边界，由下一层的只读属性兜底。
+- **准入**：连接 URL 路径内嵌不可猜测的 `MCP_PATH_TOKEN`（常量时间比较，错误 404 不区分原因；对整段大小写折叠兼容——部分连接器客户端会规范化 URL 大小写，折叠后熵仍约 168 bit）。ChatGPT 自定义连接器不支持自定义认证头，URL 即准入凭证；这是有意的现实边界。2.1 只读面由只读工具兜底；2.2 增加 create-only 后，在当前导入 Token 配置下，持有 URL 即可创建新训练/动作（仍不能更新/删除/归档/管理），因此 URL 必须按凭证保管，泄露时轮换并重建连接器。
 - **工具（2.1 只读面）**：7 个只读工具（get_metadata、search_exercises、list_workouts、get_workout、get_summary_stats、get_strength_stats、get_cardio_stats）映射 Agent API GET。`list_workouts`/`get_workout` 永不传递 includeNotes，训练备注对 MCP 客户端不可见。参数浅校验（必填/格式/枚举/未知参数拒绝，`additionalProperties: false` 强制执行）后原样转发；上游 Zod 仍是权威校验者。
 - **错误契约**：参数错误 JSON-RPC -32602；未知方法 -32601；解析/结构错误 -32700/-32600（HTTP 400）；上游 401/403→AUTHENTICATION、400/404/422→透传安全错误码、429/5xx→UPSTREAM_ERROR、网络失败→UPSTREAM_UNREACHABLE、超 4 MiB→RESPONSE_TOO_LARGE，全部以 `isError: true` 文本内容返回，不含密钥、内部 URL 或堆栈。
-- **凭据与轮换**：`AGENT_CLIENT_ID`/`AGENT_CLIENT_SECRET` 为 Worker Secret，建议使用未加入导入白名单的只读 Service Token；轮换只影响该 Worker，所有对话即时生效。`AGENT_BASE_URL` 为公开 var。
+- **凭据与轮换**：`AGENT_CLIENT_ID`/`AGENT_CLIENT_SECRET` 为 Worker Secret。仅分析场景可使用未加入导入白名单的只读 Service Token；启用 create 工具时必须使用精确授权的导入 Token（导入白名单），且只授予 `workouts:create`/`exercises:create`，不授予更新/删除/管理权限。轮换只影响该 Worker，所有对话即时生效。`AGENT_BASE_URL` 为公开 var。
 - **测试**：workerd 池覆盖协议面（认证路径、405、解析/结构错误、版本协商、通知 202、工具清单）与上游映射（凭据头、URL 编码、非法参数拒绝且不发上游请求、上游失败映射、缺凭据 fail closed）；另有 Node 真实 TCP + 官方 SDK 客户端套件钉住 initialize/listTools/callTool 全流程。
 
 ### 9.6.1 受控新增工具（2.2）
@@ -816,6 +820,8 @@ ChatGPT 网页版 skill 的 python 沙箱默认无出站网络，CLI 方案在�
 - **幂等**：MCP 无状态调用，幂等键按"工具名 + 规范化参数"的 SHA-256 推导（`hw-mcp-<hex>`），相同内容 24 小时内重试回放原始结果而非重复创建；显式 `idempotencyKey` 参数用于刻意的相同内容重复创建。
 - **ID 注入**：条目/组/动作的 UUID 可由调用方省略，Worker 生成（`crypto.randomUUID`），避免要求模型生成 UUID；显式提供的必须通过 UUID 校验。
 - **双层校验**：MCP 层做结构/类型/格式浅校验（含 completed 默认、working 默认、null 填充，确保满足上游 strict schema 的完整字段）；上游 Zod 仍是权威校验者，业务错误（409 同名动作、422 计量不符、INVALID_EXERCISE 等）以 `UPSTREAM_REJECTED <code>` 文本回传供模型自纠。
+
+截至 2026-10-24，9 工具版本已上线，用户已在 ChatGPT 网页端实际使用；MCP 仍无更新/删除/归档/设置/导出/数据库管理面。
 
 ## 15. 官方参考资料
 

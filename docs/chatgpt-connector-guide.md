@@ -1,12 +1,13 @@
 # ChatGPT 接入 HealthWorker：从 Skill 到 MCP Connector 的开发与排障指南
 
-本文记录"让 ChatGPT 跨对话分析并记录训练数据"这一需求的完整落地过程：为什么放弃 Skill 路线、MCP 连接器的系统设计、对接 ChatGPT 的全部硬性要求、Cloudflare 边缘层踩过的坑，以及可复用的排障方法。配套实现见 `mcp/`，设计基线见 [design.md §9.6 / §9.6.1](design.md)。
+本文记录"让 ChatGPT 跨对话分析并记录训练数据"这一需求的完整落地过程：为什么 Skill 路线不作为网页端 plugin 入口、MCP 连接器的系统设计、对接 ChatGPT 的全部硬性要求、Cloudflare 边缘层踩过的坑，以及可复用的排障方法。配套实现见 `mcp/`，设计基线见 [design.md §9.6 / §9.6.1](design.md)。
 
 ## 1. 结论先行
 
-- **Skill 路线在网页版 ChatGPT 上不可行**：Skill 的 python 执行沙箱**默认无出站网络**（DNS 直接失败），CLI 无法访问自建 API；且携带密钥的 Skill 包会被 OpenAI 安全审查标记（"may request or misuse credentials / send data outside the expected workflow"）。
-- **MCP 连接器是正解**：MCP 连接由 ChatGPT 本体发起、不经过 python 沙箱。把自建 API 封装成**远程 MCP 服务器**（Streamable HTTP），ChatGPT 通过自定义连接器直连。
+- **Skill 路线不作为网页端 plugin 方案**：普通 ChatGPT 网页对话不执行用户本机的 CLI；当时 Skill 的 python 执行环境在网页版实测 DNS 失败。2026-10 核对 OpenAI 文档：ChatGPT Work 的 code/shell 网络由 workspace/用户策略控制，普通网页 Chat 不暴露本地 sandbox，因此“把 CLI 塞进 Skill”既不稳定，也无法安全携带 Access Service Token；携带活体凭据的 Skill 包还会被 OpenAI 安全审查标记（"may request or misuse credentials / send data outside the expected workflow"）。
+- **MCP 连接器是当前路径**：MCP 连接由 ChatGPT 本体发起，不经用户 sandbox。把自建 API 封装成**远程 MCP 服务器**（Streamable HTTP），ChatGPT 通过自定义连接器直连。2026-10-24 用户已在 ChatGPT 网页端实际使用 9 工具版本。
 - **密钥问题的根治**：连接 URL 内嵌不可猜测路径令牌，真正的上游凭据（Cloudflare Access Service Token）只存在于 MCP Worker 的 Secret 里，永远不进 ChatGPT、不进对话、不进技能包。
+- **2026-10 官方文档口径**：Plugin 由 skills + MCP server 组成；MCP 负责实时数据、认证、授权与受控操作，仅 instructions/resources 的插件可以只有 skills。Custom GPT 正在迁移到 plugins，custom actions 不会自动迁移，官方建议替换为 custom MCP server。参考 [Plugin architecture](https://developers.openai.com/plugins/concepts/plugins)、[MCP server](https://developers.openai.com/plugins/concepts/mcp-server)、[Moving custom GPTs to plugins](https://developers.openai.com/codex/migrate-custom-gpts)。
 - 最终架构：
 
 ```
@@ -23,16 +24,16 @@ healthworker-mcp Worker（mcp/ 目录，无状态、无 DO）
 D1（训练数据）
 ```
 
-## 2. 两条路线对比（为什么放弃 Skill）
+## 2. 两条路线对比（为什么不用 Skill 作为插件入口）
 
-| 维度     | Skill（zip 上传）                              | MCP Connector（当前方案）                       |
-| -------- | ---------------------------------------------- | ----------------------------------------------- |
-| 网络     | 沙箱默认禁网，DNS 失败，无用户可配的域名白名单 | ChatGPT 本体发起，可达任意公网 HTTPS            |
-| 密钥     | 必须随包携带（或每次对话粘贴），进工作区存储   | 只存 Cloudflare Worker Secret，ChatGPT 端零凭据 |
-| 安全审查 | 内嵌活体凭据会被标记 Needs Review / Blocked    | 无凭据，无此问题                                |
-| 跨对话   | 每个新沙箱会话都要处理权限与密钥               | 装一次，所有对话可用                            |
-| 写能力   | 不可控（凭据自带权限）                         | 可由工具面精确控制（我们只暴露 create-only）    |
-| 结论     | ❌ 网页版不可行                                | ✅ 采用                                         |
+| 维度     | Skill（zip 上传）                                                                              | MCP Connector（当前方案）                        |
+| -------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 网络     | 普通网页 Chat 的 skill 运行环境不保证网络；Work 的 code/shell 由策略控制，不能作为稳定取数通道 | MCP 由 ChatGPT 本体发起，经公网 HTTPS 连接服务器 |
+| 密钥     | 必须随包携带（或每次对话粘贴），进工作区存储                                                   | 只存 Cloudflare Worker Secret，ChatGPT 端零凭据  |
+| 安全审查 | 内嵌活体凭据会被标记 Needs Review / Blocked                                                    | 无凭据，无此问题                                 |
+| 跨对话   | 每个新沙箱会话都要处理权限与密钥                                                               | 装一次，所有对话可用                             |
+| 写能力   | 不可控（凭据自带权限）                                                                         | 可由工具面精确控制（只暴露 create-only）         |
+| 结论     | ❌ 不作为网页端 plugin 路径                                                                    | ✅ 采用                                          |
 
 > 保留场景：本地/CLI 环境（有网络）仍可用 `skills/healthworker/` 的 CLI 做批量导入；ChatGPT 侧用 MCP。
 
@@ -62,11 +63,11 @@ D1（训练数据）
 - **准入 = URL 路径令牌**：`/mcp/<32 字符 base64url 随机令牌>`，常量时间比较，错误一律 404（不区分"路径不对"与"令牌不对"）。
 - 为什么不用自定义头/OAuth：**ChatGPT 自定义连接器只支持 No Auth 或 OAuth，不能发送自定义认证头**（Cloudflare Access 的 `CF-Access-Client-*` 头在连接器上无法配置）。OAuth 需要额外搭授权服务器，对单用户场景收益不成比例。
 - **大小写折叠兼容**：实测 ChatGPT 校验器会对 URL 做大小写规范化，令牌段按大小写不敏感匹配（折叠后熵仍约 168 bit）。
-- 上游凭据（`AGENT_CLIENT_ID` / `AGENT_CLIENT_SECRET`）为 Worker Secret，建议使用**未加入导入白名单的只读 Service Token**；轮换只影响 MCP Worker，所有对话即时生效。
+- 上游凭据（`AGENT_CLIENT_ID` / `AGENT_CLIENT_SECRET`）为 Worker Secret。仅分析时可使用**未加入导入白名单的只读 Service Token**；启用 create 工具时必须使用精确导入 Token，且只授予 `workouts:create`/`exercises:create`。轮换只影响 MCP Worker，所有对话即时生效。路径令牌是唯一准入，在当前导入 Token 配置下持有 URL 即拥有当前 9 工具面（含 create-only），必须按凭证保管。
 
 ### 3.4 工具面与写安全
 
-- **7 个只读工具**：`get_metadata`、`search_exercises`、`list_workouts`、`get_workout`、`get_summary_stats`、`get_strength_stats`、`get_cardio_stats`。训练备注**永不返回**（不传 `includeNotes`）。
+- **7 个只读工具**：`get_metadata`、`search_exercises`、`list_workouts`、`get_workout`、`get_summary_stats`、`get_strength_stats`、`get_cardio_stats`。训练备注**永不返回**（不传 `includeNotes`）。当前 9 工具版本已上线，用户已于 2026-10-24 在 ChatGPT 网页端实际使用。
 - **2 个 create-only 工具**：`create_workout`、`create_exercise`，与导入白名单身份已有权限一致。**无更新/删除/归档/设置/导出/管理**工具。
 - 写安全三件套：
   1. **标注**：create 工具 `readOnlyHint: false`，触发 ChatGPT 的写操作人工确认；
@@ -186,7 +187,7 @@ corepack pnpm exec wrangler secret put MCP_PATH_TOKEN      --config mcp/wrangler
 ### 8.3 轮换与撤销
 
 - 路径令牌轮换：`wrangler secret put MCP_PATH_TOKEN` 新值 → 在 ChatGPT 重建连接器（旧 URL 立即失效）；
-- 上游凭据轮换（推荐换成只读 Service Token）：更新两个 Secret 即可，所有对话即时生效；
+- 上游凭据轮换：仅分析场景可换只读 Service Token；启用 create 时保留精确导入 Token。更新两个 Secret 即可，所有对话即时生效；
 - 停用：删除 ChatGPT 连接器 + Cloudflare 侧 revoke Service Token，双保险。
 
 ## 9. 复用到其他项目的 Checklist

@@ -1,14 +1,17 @@
-// HealthWorker MCP server: a stateless read-only subset of the MCP Streamable
-// HTTP transport, hand-rolled to keep the deployment free of Durable Objects
-// and protocol-framework dependencies. The intentional surface is small:
-// initialize / notifications / ping / tools/list / tools/call, JSON responses
-// only, no sessions, no server-initiated streams. A real MCP SDK client runs
-// against this endpoint in tests to pin ecosystem compatibility.
+// HealthWorker MCP server: a stateless MCP Streamable HTTP subset, hand-rolled
+// to keep the deployment free of Durable Objects and protocol-framework
+// dependencies. The intentional surface is small: initialize / notifications /
+// ping / tools/list / tools/call, JSON responses only, no sessions, no
+// server-initiated streams. A real MCP SDK client runs against this endpoint in
+// tests to pin ecosystem compatibility.
 //
-// Security model: the connector URL path embeds an unguessable token compared
-// in constant time (ChatGPT custom connectors cannot send custom auth
+// Tool surface: 7 read-only tools plus 2 create-only tools (create_workout /
+// create_exercise). There is no update/delete/archive/settings/export/admin
+// tool. Security model: the connector URL path embeds an unguessable token
+// compared in constant time (ChatGPT custom connectors cannot send custom auth
 // headers); upstream calls carry Cloudflare Access service credentials stored
-// as Worker secrets; every tool is GET-only, so no write surface exists.
+// as Worker secrets. Read tools issue GET only; create tools POST new workouts
+// or exercises through the import-authorized service identity.
 
 import {
   callUpstream,
@@ -24,7 +27,7 @@ const MAX_REQUEST_BYTES = 262144;
 
 const SERVER_INFO = {
   name: 'healthworker',
-  title: 'HealthWorker 训练数据（只读）',
+  title: 'HealthWorker 训练数据（只读 + 受控创建）',
   version: '1.0.0',
 };
 
