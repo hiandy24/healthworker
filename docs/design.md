@@ -1,7 +1,7 @@
 # HealthWorker 完整设计方案
 
-- **文档版本**：2.2
-- **日期**：2026-09-15
+- **文档版本**：2.3
+- **日期**：2026-10-28
 - **状态**：实施基线。用户已认可总体方向，并授权整理完整方案、选择 UI 框架和建立仓库执行规则；本文细化第一版的默认实现约定。
 - **适用范围**：本仓库的前端、Worker 后端、D1 数据库、默认只读、受控创建 Agent API、Agent Skill、测试与部署。
 - **实现状态**：M2 记录 CRUD、独立 document 草稿与恢复/并发保护，M3 summary/strength/cardio 与 Recharts，M4 设置、导出、新本地 SQLite 恢复脚本与默认只读、受控创建 Skill 已实现。独立代码 review 与本地自动测试不等于完整 GUI/真实 Access 验收；2026-09-14 UTC 已首次生产部署至 https://health.tokenflare.top，首次部署时独立 D1 仅三条内置动作、无训练；DNS/TLS、无凭证 Access 拦截和备用入口关闭已实测。M5 部分完成，OTP/Service Token、完整 GUI/真机验收仍待办。具体证据与阻塞见 README、docs/deployment.md、docs/reviews/m2.md、m3.md、m4.md。
@@ -539,6 +539,8 @@ skills/healthworker/
     api.md
     data-dictionary.md
     analysis-guidelines.md
+    scientific-training.md
+    scientific-evidence.md
 ```
 
 `skills/healthworker` 是可分发源目录，不声称该目录会被所有 Agent 平台自动发现。安装文档说明如何复制/链接到目标平台支持的 skill 目录，例如 `.agents/skills/healthworker`；不自动修改用户全局配置，不复制凭证。
@@ -546,6 +548,7 @@ skills/healthworker/
 ### 9.2 Skill 职责
 
 - 明确适用问题：训练历史、力量进展、训练频次、有氧趋势及基于这些记录的分析。
+- 在训练安排、动作进阶、疲劳/恢复等问题上，可按需读取 `references/scientific-training.md` 与 `references/scientific-evidence.md`，结合真实记录给出条件性建议；建议只存在于对话中，不持久化为训练计划、不自动排课、不生成恢复评分，也不扩大 API 或写入权限。
 - 提供确定的脚本命令、参数与响应含义，不引导 Agent 临时拼接任意 shell 或任意 HTTP 请求。
 - 先获取 `/metadata`，确认版本、单位、时间规则、能力和覆盖范围。
 - 搜索具体动作 ID，再查询目标时间范围及必要明细。
@@ -601,6 +604,7 @@ healthworker.py stats cardio --category run --from 2026-08-01 --to 2026-09-01
 8. 不提供医疗诊断，不将有限训练记录包装成准确恢复评估。
 9. 仅在用户确认计划后使用受控创建；不更新/删除历史，不向用户索取 Cloudflare 账户级 Token。
 10. 使用第三方模型的 Agent 会将读取的数据带入其处理上下文；接入说明必须明确这一隐私边界。
+11. 训练指导只引用知识文件中的原则与证据边界；区分文献原则、可调默认值和个体事实，不把研究均值写成个人阈值，不把建议组数/重量写成已完成记录，不因指导请求扩大 API 或写入权限。
 
 ## 10. 项目结构与模块边界
 
@@ -770,6 +774,8 @@ D1 官方当前 Time Travel 保留期：Free 7 天、Workers Paid 30 天。上�
 | D10  | 标准命名 `AGENTS.md` 引用本设计                     | 确保仓库级 Agent 规则可被发现，避免大小写重复文件 |
 
 ### 变更记录
+
+- **2.3 / 2026-10-28（Skill 循证训练知识层）**：在 `skills/healthworker` 增加按需读取的 `scientific-training.md` 与 `scientific-evidence.md`，并在 §9.1/§9.2/§9.4 记录其边界：知识层仅按需读取，建议只存在于对话中；不新增自动排课、计划表、恢复评分、诊断、API/DB/MCP 工具或权限变更。新增 12 项合成人工场景，尚未执行自动化 Agent 评测；未部署。
 
 - **2.2 文档同步 / 2026-10-24**：按线上实际状态对齐 A22 与 §9.6/§9.6.1（9 工具 = 7 只读 + 2 create-only），记录用户 ChatGPT 网页端实测；澄清普通 Chat/Work 网络边界与 MCP 凭据要求；不改变架构、权限、数据语义或统计口径。
 

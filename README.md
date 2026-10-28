@@ -1,6 +1,6 @@
 # HealthWorker
 
-基于 Cloudflare Workers 与 D1 的个人训练记录系统。实施基线见 [完整设计 2.2](docs/design.md) 和 [执行规则](AGENTS.md)。
+基于 Cloudflare Workers 与 D1 的个人训练记录系统。实施基线见 [完整设计 2.3](docs/design.md) 和 [执行规则](AGENTS.md)。
 
 ## 当前状态：M2–M4 已上线，M5 部分完成
 
@@ -70,7 +70,7 @@ HEALTHWORKER_BASE_URL=http://127.0.0.1:5173 \
   python3 skills/healthworker/scripts/healthworker.py --development stats summary
 ```
 
-恢复只创建新本地 SQLite，拒绝覆盖/远端参数，不是远端 D1 恢复工具。正式 Agent 默认读取 Skill 根私有 `client.local.json` 中 HTTPS baseUrl/clientId/clientSecret，环境变量可优先覆盖但不允许跨 origin；凭证不进命令行、Git 或公开包。详见 [Skill](skills/healthworker/SKILL.md) 与 [CLI 契约](skills/healthworker/references/api.md)；源目录不会被所有平台自动发现，不自动安装到全局。读取命令只用白名单 GET；导入命令仅在能力检查和用户确认后 POST workouts，每次 socket 操作 20 秒（非总截止时间），初次后最多 3 次重试，拒绝所有重定向/HTML，分页截断显式返回。
+恢复只创建新本地 SQLite，拒绝覆盖/远端参数，不是远端 D1 恢复工具。正式 Agent 默认读取 Skill 根私有 `client.local.json` 中 HTTPS baseUrl/clientId/clientSecret，环境变量可优先覆盖但不允许跨 origin；凭证不进命令行、Git 或公开包。详见 [Skill](skills/healthworker/SKILL.md) 与 [CLI 契约](skills/healthworker/references/api.md)；源目录不会被所有平台自动发现，不自动安装到全局。Skill 的循证训练知识层说明见 [接入说明](docs/scientific-knowledge-integration.md)。读取命令只用白名单 GET；导入命令仅在能力检查和用户确认后 POST workouts，每次 socket 操作 20 秒（非总截止时间），初次后最多 3 次重试，拒绝所有重定向/HTML，分页截断显式返回。
 
 本轮 session review 另修复无正文 DELETE JSON 请求头、启动云端主题、统计中文质量键、UTF-8 载荷预检、UUID 类型安全、D1 插入宽度、guard 定向清理和幂等当前 request ID。新增测试未使用浏览器；既有 dev server 未重启。逐项修复、迭代失败与最终证据见 [本次 session review](docs/reviews/session-2026-09-14.md)。
 

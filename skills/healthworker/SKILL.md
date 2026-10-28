@@ -1,6 +1,6 @@
 ---
 name: healthworker
-description: Read and analyze personal HealthWorker training history, exercise progress, workout frequency, strength records and cardio trends through the default-read-only Agent API, or import existing batch workouts (creating their missing exercise definitions) after explicit user confirmation with an authorized create-only token. Use whenever the user asks about their HealthWorker workouts or training statistics, even without explicitly requesting an API query. Never use for historical updates/deletes, exercise updates/archives/deletes, Cloudflare account administration or medical diagnosis.
+description: Read and analyze personal HealthWorker training history, objective statistics and progress; provide evidence-informed, adaptive training guidance using existing records and user constraints, without rigid plans or unsupported physiological thresholds; or import confirmed workouts with the authorized create-only API. Use for HealthWorker data questions and training guidance. Never update/delete historical records or exercises, use Cloudflare administration, auto-save prescribed sets, or diagnose medical conditions.
 ---
 
 # HealthWorker
@@ -28,6 +28,16 @@ Configuration is loaded only when a command executes, never at module import or 
 Use a restricted, expiring Cloudflare **Access Service Token** for the shared hostname Access application’s Service Auth policy, not a Cloudflare account API token. Never request account management credentials, JWTs or provider model keys. The Worker validates the single ACCESS_AUD and signed service identity (type=app, empty sub, nonempty common_name Client ID, no email); human and mixed/unknown identities cannot access the service-only Agent routes, and service identities cannot access human routes; the Skill's instructions alone are not authorization; ordinary services remain read-only, and only explicitly allowlisted services receive exercises:create and workouts:create. Token rotation/revocation is an owner operation outside this Skill.
 
 Before first retrieval, explain that data read by an external Agent enters that Agent/model provider's processing context and is subject to that provider's retention and privacy policies. Respect the user's choice and retrieve only the minimum needed. This CLI has no telemetry or external model integration. Explicit import sends approved workouts only to HealthWorker and persists private plans/journals. Do not forward retrieved data to other tools/services without explicit authorization. Notes may contain especially sensitive personal information.
+
+## 循证训练指导（外部 Agent，而非固定课表引擎）
+
+当用户询问增肌、力量、训练计划、动作进阶、组间指导、疲劳或恢复时，按需读取 [科学训练原则](references/scientific-training.md)，涉及量化依据与研究强度时再读 [证据索引](references/scientific-evidence.md)。纯知识问题可直接回答；涉及用户历史时先按下述 Workflow 读取最少必需的实际记录，并遵守既有数据与隐私规范。
+
+- 区分文献支持的原则与习惯性参数；不要强制固定分化、每周组数、RIR、休息时数或训练周期。
+- 将**计划建议**与**已完成记录**分开；不凭预测或目标组数构造实绩，也不将缺测 RIR、重量、体感补成已知值。
+- 安全红旗优先；普通疲劳和一般不适采取条件性调整，不能凭单个阈值诊断损伤或过度训练。
+- 优先简要解释实际依据、行动建议及不确定性；不必生成一套训练计划 JSON、训练 DNA 或多份文件。
+- 仅在用户明确确认实际训练数据后，才能使用现有 create-only 权限新增；本知识文件不扩大任何接口权限。
 
 ## Workflow
 
