@@ -12,10 +12,12 @@
 - skills/healthworker/references/scientific-training.md：训练编排、训练量、频率、RIR、渐进超负荷、恢复、现场指导及复盘的原则。
 - skills/healthworker/references/scientific-evidence.md：研究文献和外推限制。
 - tests/skill/scientific-coaching-cases.md：12项合成场景人工回归用例。
+- docs/design.md：§9.1/§9.2/§9.4 补充知识层边界，并增加 2.3 变更记录。
+- README.md：同步设计版本，并链接本说明。
 
 ## 与原有设计兼容
 
-docs/design.md仍明确不在后端或前端加入自动训练计划及AI诊疗；知识层仅由外部Agent按需引用。原有数据库、共享统计口径、Worker/API、MCP工具、授权边界、CLI和数据导入安全策略均保持不变。
+docs/design.md 2.3 的 §9.1/§9.2/§9.4 已记录该知识层：仅在外部 Agent 对话中按需引用，不新增自动训练计划、计划持久化或 AI 诊疗。原有数据库、共享统计口径、Worker/API、MCP 工具、授权边界、CLI 和数据导入安全策略均保持不变。
 
 ## 审查与验证建议
 
